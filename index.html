@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimplePro MEP Productivity Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Home Screen -->
+        <div id="homeScreen" class="screen active">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div>
+                        <h1>SimplePro</h1>
+                        <div class="tagline">Productivity Simplified</div>
+                        <div id="projectName" class="project-name">Al Barsha Mall Project</div>
+                        <div id="currentDate" class="current-date"></div>
+                    </div>
+                    <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+                </div>
+            </div>
+
+            <div class="overview-cards">
+                <div class="card-row">
+                    <div class="stat-card">
+                        <div class="stat-value" id="activeTasks">0</div>
+                        <div class="stat-label">Active Tasks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="activeTeams">0</div>
+                        <div class="stat-label">Active Teams</div>
+                    </div>
+                </div>
+                <div class="card-row">
+                    <div class="stat-card">
+                        <div class="stat-value" id="completedTasks">0</div>
+                        <div class="stat-label">Completed</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="pendingTasks">0</div>
+                        <div class="stat-label">Pending</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header-with-action">
+                    <h2 class="section-title">RECENT TASKS</h2>
+                    <button class="sort-icon-btn" onclick="showHomeSortMenu()" title="Sort tasks">☰</button>
+                </div>
+                <div id="recentTasksList" class="tasks-list"></div>
+            </div>
+
+            <div class="app-footer">
+                Designed by Shijo George in collaboration with SimplePro
+            </div>
+        </div>
+
+        <!-- Create Task Screen -->
+        <div id="createScreen" class="screen">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h1>Create New Task</h1>
+                    <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+                </div>
+            </div>
+
+            <form id="createTaskForm" class="form">
+                <div class="form-group">
+                    <label for="taskDate">Date</label>
+                    <input type="date" id="taskDate" required>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="taskId">Task ID</label>
+                    <input type="text" id="taskId" placeholder="e.g., Task-01" required>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="teamName">Team Name</label>
+                    <input type="text" id="teamName" placeholder="e.g., Team Shijo, Team-01" required>
+                    <div class="hint-text">Give your team a name for recognition</div>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="taskName">Task Name</label>
+                    <input type="text" id="taskName" placeholder="e.g., Duct installation main lobby" required>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="location">Location</label>
+                    <select id="location" required>
+                        <option value="">Select location...</option>
+                    </select>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="trade">Trade</label>
+                    <select id="trade" required>
+                        <option value="">Select trade...</option>
+                    </select>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="section-header">ACTIVITY</div>
+
+                <div class="form-group">
+                    <label for="mainActivity">Main Activity</label>
+                    <input type="text" id="mainActivity" placeholder="Type to search..." autocomplete="off" required>
+                    <div id="mainActivitySuggestions" class="suggestions"></div>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="activity">Activity</label>
+                    <select id="activity" class="placeholder" required>
+                        <option value="">Select activity...</option>
+                    </select>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="section-header">WORKERS</div>
+
+                <div class="form-group">
+                    <input type="text" id="workerSearch" placeholder="Search workers..." autocomplete="off">
+                </div>
+
+                <div id="selectedWorkersSection" class="selected-workers-section" style="display:none;">
+                    <div class="section-subheader">
+                        <span>SELECTED</span>
+                        <span id="selectedCount" class="worker-count">Skilled: 0, Helper: 0</span>
+                    </div>
+                    <div id="selectedWorkersList" class="workers-list-compact"></div>
+                </div>
+
+                <div class="section-subheader" style="margin-top: 12px;">
+                    <span>AVAILABLE WORKERS</span>
+                </div>
+                <div id="availableWorkersList" class="workers-list"></div>
+                <div class="error-message" id="workersError"></div>
+
+                <div class="form-group">
+                    <label for="hours">Hours</label>
+                    <input type="number" id="hours" placeholder="e.g., 8" min="0.5" step="0.5" required>
+                    <div class="error-message"></div>
+                </div>
+
+                <div class="target-display">
+                    <div class="target-label">TARGET QUANTITY</div>
+                    <div class="target-value" id="targetQuantity">—</div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" id="cancelEditBtn" class="btn-secondary" onclick="cancelEdit()" style="display:none;">Cancel</button>
+                    <button type="submit" id="saveTaskBtn" class="btn-primary">Save Task</button>
+                    <button type="button" id="shareTaskBtn" class="btn-primary" disabled>Share Task</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Reports Screen -->
+        <div id="reportsScreen" class="screen">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+                    <h1>Tasks & Performance</h1>
+                    <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+                </div>
+                
+                <div id="totalProductivityDisplay" class="productivity-banner">
+                    <div class="prod-label">TOTAL PRODUCTIVITY</div>
+                    <div class="prod-value" id="totalProductivity">—</div>
+                </div>
+
+                <div class="date-navigator">
+                    <button id="prevDate" class="btn-icon">←</button>
+                    <div id="reportDate" class="report-date"></div>
+                    <button id="nextDate" class="btn-icon">→</button>
+                </div>
+
+                <div class="filters-row">
+                    <select id="locationFilter" class="filter-select">
+                        <option value="">All Locations</option>
+                    </select>
+                    <select id="statusFilter" class="filter-select">
+                        <option value="">All Status</option>
+                        <option value="completed">Completed</option>
+                        <option value="pending">In Progress</option>
+                    </select>
+                </div>
+
+                <button id="productivityByTradeBtn" class="btn-secondary" style="width: 100%; margin-top: 12px;">
+                    📊 Productivity by Trade
+                </button>
+            </div>
+
+            <div id="reportsList" class="tasks-list"></div>
+
+            <div id="leaderboard" class="leaderboard" style="display:none;">
+                <div class="section-header-with-action">
+                    <h2 class="section-title">🏆 TEAM LEADERBOARD</h2>
+                    <button class="sort-icon-btn" onclick="showLeaderboardSortMenu()" title="Sort leaderboard">☰</button>
+                </div>
+                <div id="leaderboardList"></div>
+            </div>
+        </div>
+
+        <!-- Workers Screen -->
+        <div id="workersScreen" class="screen">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                            <h1>Workers</h1>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="sort-icon-btn" onclick="showWorkersSortMenu()" title="Sort workers">☰</button>
+                                <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+                            </div>
+                        </div>
+                        <div class="workers-stats">
+                            <span id="workersCount">27 workers</span>
+                            <span style="margin: 0 8px;">•</span>
+                            <span id="workersBreakdown">Skilled: 20, Helper: 7</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <input type="text" id="workersScreenSearch" placeholder="Search workers..." autocomplete="off">
+            </div>
+
+            <div id="workersScreenList" class="workers-directory"></div>
+        </div>
+
+        <!-- Calculator Screen -->
+        <div id="calculatorScreen" class="screen">
+            <div class="header">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h1>MEP Productivity Calculator</h1>
+                    <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
+                </div>
+            </div>
+
+            <div class="calculator-container">
+                <form id="calculatorForm" class="form">
+                    <div class="form-group">
+                        <label for="calcMainActivity">Main Activity</label>
+                        <input type="text" id="calcMainActivity" placeholder="Type to search..." autocomplete="off" required>
+                        <div id="calcMainActivitySuggestions" class="suggestions"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="calcActivity">Activity</label>
+                        <select id="calcActivity" class="placeholder" required>
+                            <option value="">Select activity...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="calcSkilledWorkers">Skilled Workers</label>
+                        <input type="number" id="calcSkilledWorkers" placeholder="Number of skilled workers" min="0" value="0" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="calcHelpers">Helpers</label>
+                        <input type="number" id="calcHelpers" placeholder="Number of helpers" min="0" value="0" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="calcHours">Hours</label>
+                        <input type="number" id="calcHours" placeholder="Working hours" min="0.5" step="0.5" value="8" required>
+                    </div>
+
+                    <div class="target-display">
+                        <div class="target-label">TARGET QUANTITY</div>
+                        <div class="target-value" id="calcTargetQuantity">—</div>
+                    </div>
+
+                    <button type="button" class="btn-primary" onclick="calculateProductivity()" style="width: 100%; margin-top: 20px;">
+                        Calculate
+                    </button>
+                    <button type="button" class="btn-secondary" onclick="resetCalculator()" style="width: 100%; margin-top: 12px;">
+                        Reset
+                    </button>
+                </form>
+            </div>
+
+            <div class="app-footer">
+                Designed by Shijo George in collaboration with SimplePro
+            </div>
+        </div>
+
+        <!-- Settings Screen -->
+        <div id="settingsScreen" class="screen">
+            <div class="header">
+                <h1>Settings</h1>
+            </div>
+
+            <div class="settings-section">
+                <h3>🏢 COMPANY DATA</h3>
+                <div class="setting-item" onclick="editProjectName()">
+                    <div>Project Name</div>
+                    <div class="setting-value" id="displayProjectName">Al Barsha Mall Project</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>⏰ WORKING HOURS</h3>
+                <div class="setting-item" onclick="editStandardHours()">
+                    <div>Standard Hours</div>
+                    <div class="setting-value" id="displayStandardHours">8 hrs/day</div>
+                </div>
+                <div class="setting-item" onclick="editOvertimeHours()">
+                    <div>Overtime Hours</div>
+                    <div class="setting-value" id="displayOvertimeHours">2 hrs/day</div>
+                </div>
+                <div class="setting-item-info">
+                    <div>Max Total Hours</div>
+                    <div class="setting-value" id="displayMaxHours">10 hrs/day</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>💰 LABOR RATES</h3>
+                <div class="setting-item" onclick="editSkilledRate()">
+                    <div>Skilled Worker</div>
+                    <div class="setting-value" id="displaySkilledRate">AED 14/hr</div>
+                </div>
+                <div class="setting-item" onclick="editHelperRate()">
+                    <div>Helper</div>
+                    <div class="setting-value" id="displayHelperRate">AED 10.5/hr</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>📍 PROJECT DATA</h3>
+                <div class="setting-item" onclick="manageLocations()">
+                    <div>Manage Locations</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+                <div class="setting-item" onclick="manageTrades()">
+                    <div>Manage Trades</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>👷 WORKERS</h3>
+                <div class="setting-item" onclick="manageWorkers()">
+                    <div>Manage Workers</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+                <div class="setting-item" onclick="importWorkers()">
+                    <div>📤 Import Workers (Excel)</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+                <div class="setting-item-info">
+                    <div>Current Workers</div>
+                    <div class="setting-value" id="displayWorkersCount">27</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>📊 PRODUCTIVITY RATES</h3>
+                <div class="setting-item" onclick="importRates()">
+                    <div>📤 Import Rates (Excel)</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+                <div class="setting-item-info">
+                    <div>Current Activities</div>
+                    <div class="setting-value" id="displayRatesCount">2,893</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>📂 DATA MANAGEMENT</h3>
+                <div class="setting-item" onclick="exportAllData()">
+                    <div>Export All Data</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+                <div class="setting-item" onclick="clearAllData()">
+                    <div>Clear All Data</div>
+                    <div class="setting-arrow">›</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3>ℹ️ ABOUT</h3>
+                <div class="setting-item-info">
+                    <div>Version</div>
+                    <div class="setting-value">1.0.0 Beta</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Navigation (5 tabs) -->
+        <nav class="bottom-nav">
+            <button class="nav-item active" data-screen="homeScreen">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Home</span>
+            </button>
+            <button class="nav-item" data-screen="createScreen">
+                <span class="nav-icon">➕</span>
+                <span class="nav-label">Create</span>
+            </button>
+            <button class="nav-item" data-screen="reportsScreen">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Reports</span>
+            </button>
+            <button class="nav-item" data-screen="workersScreen">
+                <span class="nav-icon">👷</span>
+                <span class="nav-label">Workers</span>
+            </button>
+            <button class="nav-item" data-screen="calculatorScreen">
+                <span class="nav-icon">🧮</span>
+                <span class="nav-label">Calculator</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- Track Performance Modal -->
+    <div id="trackModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Track Performance</h2>
+                <button class="modal-close" onclick="closeTrackModal()">✕</button>
+            </div>
+            <div id="trackModalBody" class="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Worker Dashboard Modal -->
+    <div id="workerModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Worker Dashboard</h2>
+                <button class="modal-close" onclick="closeWorkerModal()">✕</button>
+            </div>
+            <div id="workerModalBody" class="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Productivity by Trade Modal -->
+    <div id="tradeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Productivity by Trade</h2>
+                <button class="modal-close" onclick="closeTradeModal()">✕</button>
+            </div>
+            <div id="tradeModalBody" class="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Hidden file inputs -->
+    <input type="file" id="workersFileInput" accept=".xlsx,.xls" style="display:none">
+    <input type="file" id="ratesFileInput" accept=".xlsx,.xls" style="display:none">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="data.js"></script>
+    <script src="workers-data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
