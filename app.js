@@ -105,9 +105,17 @@ function setupEventListeners() {
     
     document.getElementById('prevDate').addEventListener('click', () => navigateDate(-1));
     document.getElementById('nextDate').addEventListener('click', () => navigateDate(1));
-    document.getElementById('locationFilter').addEventListener('change', loadReports);
     document.getElementById('statusFilter').addEventListener('change', loadReports);
-    document.getElementById('productivityByTradeBtn').addEventListener('click', showProductivityByTrade);
+    document.getElementById('calendarBtn').addEventListener('click', () => {
+        const picker = document.getElementById('reportDatePicker');
+        picker.value = state.reportDate;
+        picker.style.display = 'block';
+        picker.click();
+        picker.addEventListener('change', function() { 
+            handleDatePick(this.value); 
+            this.style.display = 'none'; 
+        }, { once: true });
+    });
     
     document.getElementById('workersScreenSearch').addEventListener('input', handleWorkersScreenSearch);
 }
@@ -288,7 +296,7 @@ function updateHomeScreen() {
     if (todayTasks.length === 0) {
         tasksList.innerHTML = '<div class="empty-state"><p>No tasks for today</p><p class="empty-hint">Create a task to get started</p></div>';
     } else {
-        tasksList.innerHTML = todayTasks.map(task => renderTaskCard(task, true)).join('');
+        tasksList.innerHTML = todayTasks.map(task => renderTaskCard(task, 'home')).join('');
     }
 }
 
@@ -318,49 +326,37 @@ function sortHomeBy(sortType) {
     showToast(`Sorted by ${sortType === 'default' ? 'default order' : sortType === 'taskId' ? 'Task ID' : sortType === 'trade' ? 'Trade' : 'Team Name'}`);
 }
 
-function renderTaskCard(task, showActions = false) {
-    const statusText = task.status === 'completed' ? 'Completed' : 'In Progress';
-    const statusClass = task.status === 'completed' ? 'completed' : 'pending';
+function renderTaskCard(task, context = 'home') {
+    const workers = task.workers || [];
+    const skilled = workers.filter(w => w.type === 'skilled').length;
+    const helpers = workers.filter(w => w.type === 'helper').length;
     
-    let productivityHtml = '';
+    let statusHtml = '';
     if (task.status === 'completed' && task.productivity) {
-        let prodColor = '';
-        let prodBg = '';
-        if (task.productivity >= 100) {
-            prodColor = '#2b8a3e';
-            prodBg = '#d4f8d4';
-        } else if (task.productivity >= 90) {
-            prodColor = '#d9730d';
-            prodBg = '#ffe8cc';
-        } else {
-            prodColor = '#d63031';
-            prodBg = '#ffd4d4';
-        }
-        
-        productivityHtml = `<span class="productivity-pill" style="background: ${prodBg}; color: ${prodColor}; padding: 4px 10px; border-radius: 6px; font-weight: 700; margin-left: 8px;">${Math.round(task.productivity)}%</span>`;
+        let prodColor = task.productivity >= 100 ? '#2b8a3e' : task.productivity >= 90 ? '#d9730d' : '#d63031';
+        let prodBg = task.productivity >= 100 ? '#d4f8d4' : task.productivity >= 90 ? '#ffe8cc' : '#ffd4d4';
+        statusHtml = `
+            <div class="task-card-status completed">
+                <span>Completed</span>
+                <span style="background:${prodBg}; color:${prodColor}; padding:2px 8px; border-radius:6px; font-weight:700;">${Math.round(task.productivity)}%</span>
+            </div>`;
+    } else {
+        statusHtml = `<div class="task-card-status pending">⏳ In Progress</div>`;
     }
     
-    const actionsHtml = showActions ? `
-        <div class="task-actions">
-            ${task.status === 'pending' ? 
-                `<button class="btn-secondary" onclick="openTrackModal('${task.id}')">Track Performance</button>
-                 <button class="btn-secondary" onclick="editTask('${task.id}')">Edit Task</button>` :
-                `<button class="btn-secondary" onclick="viewTaskDetails('${task.id}')">View Details</button>`
-            }
-        </div>
-    ` : '';
+    const onclick = context === 'reports' 
+        ? `openTrackModal('${task.id}')` 
+        : `editTask('${task.id}')`;
     
     return `
-        <div class="task-card">
-            <div class="task-title">${task.taskName}</div>
-            <div class="task-meta">🆔 ${task.taskIdentifier}</div>
-            <div class="task-meta">🔧 ${task.trade}</div>
-            <div class="task-meta">👥 ${task.teamName}</div>
-            <div class="task-meta">📍 ${task.location}</div>
-            <div class="task-status ${statusClass}">
-                ${task.status === 'completed' ? '✓' : '⏳'} ${statusText}${productivityHtml}
-            </div>
-            ${actionsHtml}
+        <div class="task-card" onclick="${onclick}">
+            <div class="task-card-name">${task.taskName}</div>
+            <div class="task-card-row">${task.taskIdentifier}</div>
+            <div class="task-card-row">${task.trade}</div>
+            <div class="task-card-row bold">${task.teamName}</div>
+            <div class="task-card-row">${skilled} Skilled ${helpers > 0 ? '• ' + helpers + ' Helper' : ''}</div>
+            <div class="task-card-row bold">${task.targetQuantity ? formatNumber(task.targetQuantity) + ' ' + task.unit : '—'}</div>
+            ${statusHtml}
         </div>
     `;
 }
@@ -826,9 +822,8 @@ function handleSaveTask(e) {
     document.getElementById('saveTaskBtn').textContent = 'Save Task';
     document.getElementById('cancelEditBtn').style.display = 'none';
     
-    setTimeout(() => {
-        switchScreen('homeScreen');
-    }, 1000);
+    // Stay on page so user can share - they press Home tab when ready
+    showToast('✓ Task saved! Share or press Home when ready.');
 }
 
 function handleShareTask() {
@@ -875,13 +870,38 @@ function navigateDate(direction) {
     loadReports();
 }
 
+let reportsSortBy = 'default';
+
+function showReportsSortMenu() {
+    const html = `
+        <div class="sort-menu-item ${reportsSortBy === 'default' ? 'active' : ''}" onclick="sortReportsBy('default')">Default Order</div>
+        <div class="sort-menu-item ${reportsSortBy === 'trade' ? 'active' : ''}" onclick="sortReportsBy('trade')">Sort by Trade</div>
+        <div class="sort-menu-item ${reportsSortBy === 'high' ? 'active' : ''}" onclick="sortReportsBy('high')">Productivity: High to Low</div>
+        <div class="sort-menu-item ${reportsSortBy === 'low' ? 'active' : ''}" onclick="sortReportsBy('low')">Productivity: Low to High</div>
+        <div class="sort-menu-item" onclick="showProductivityByTrade(); closeGenericModal();">📊 Productivity by Trade</div>
+    `;
+    showModal('Sort & Filter', html);
+}
+
+function sortReportsBy(sortType) {
+    reportsSortBy = sortType;
+    loadReports();
+    closeGenericModal();
+}
+
+function handleDatePick(value) {
+    if (value) {
+        state.reportDate = value;
+        document.getElementById('reportDate').textContent = formatDateShort(new Date(value + 'T00:00:00'));
+        loadReports();
+    }
+}
+
 function loadReports() {
-    const locationFilter = document.getElementById('locationFilter').value;
     const statusFilter = document.getElementById('statusFilter').value;
     
     let tasks = state.tasks.filter(t => t.date === state.reportDate);
     
-    if (locationFilter) tasks = tasks.filter(t => t.location === locationFilter);
     if (statusFilter) tasks = tasks.filter(t => t.status === statusFilter);
     
     const reportsList = document.getElementById('reportsList');
@@ -894,7 +914,7 @@ function loadReports() {
         return;
     }
     
-    reportsList.innerHTML = tasks.map(task => renderTaskCard(task, true)).join('');
+    reportsList.innerHTML = tasks.map(task => renderTaskCard(task, 'reports')).join('');
     
     // Calculate total productivity
     const completed = tasks.filter(t => t.status === 'completed');
@@ -961,14 +981,13 @@ function renderLeaderboard(tasks) {
     const medals = ['🥇', '🥈', '🥉'];
     
     const html = teams.map((team, i) => {
-        const color = team.productivity >= 100 ? '🟢' : team.productivity >= 90 ? '🟠' : '🔴';
-        const medal = i < 3 && state.leaderboardSortBy === 'high' ? medals[i] : '';
-        
+        let prodColor = team.productivity >= 100 ? '#2b8a3e' : team.productivity >= 90 ? '#d9730d' : '#d63031';
+        let prodBg = team.productivity >= 100 ? '#d4f8d4' : team.productivity >= 90 ? '#ffe8cc' : '#ffd4d4';
         return `
             <div class="leaderboard-item">
-                ${medal ? `<div class="leaderboard-rank">${medal}</div>` : ''}
+                <div class="leaderboard-rank" style="font-weight:700; color:var(--text-muted); font-size:14px;">${i+1}</div>
                 <div class="leaderboard-team">${team.name}</div>
-                <div class="leaderboard-score">${Math.round(team.productivity)}% ${color}</div>
+                <div class="leaderboard-score" style="background:${prodBg}; color:${prodColor}; padding:4px 10px; border-radius:8px;">${Math.round(team.productivity)}%</div>
             </div>
         `;
     }).join('');
@@ -1053,15 +1072,24 @@ function openTrackModal(taskId) {
     const body = document.getElementById('trackModalBody');
     
     body.innerHTML = `
-        <div class="task-info">
-            <h3>${task.taskName}</h3>
-            <div class="task-meta">👥 ${task.teamName}</div>
-            <div class="task-meta">📍 ${task.location}</div>
-            <div style="height: 12px;"></div>
-            <div class="target-display">
-                <div class="target-label">TARGET</div>
-                <div class="target-value">${formatNumber(task.targetQuantity)} ${task.unit}</div>
+        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px;">
+            <div>
+                <h3 style="font-size:17px; font-weight:700;">${task.taskName}</h3>
+                <div style="font-size:13px; color:var(--text-muted); margin-top:4px;">${task.taskIdentifier} • ${task.trade}</div>
+                <div style="font-size:13px; color:var(--text-muted);">${task.activity}</div>
+                <div style="font-size:13px; color:var(--text-muted);">👥 ${task.teamName} • 📍 ${task.location}</div>
             </div>
+            <div style="position:relative;">
+                <button onclick="toggleTaskMenu('${taskId}')" style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;">⋮</button>
+                <div id="taskMenu_${taskId}" style="display:none; position:absolute; right:0; top:30px; background:white; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,.15); z-index:100; min-width:120px;">
+                    <div onclick="closeTrackModal(); editTask('${taskId}');" style="padding:12px 16px; cursor:pointer; font-weight:600; font-size:14px;">✏️ Edit Task</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="target-display">
+            <div class="target-label">TARGET</div>
+            <div class="target-value">${formatNumber(task.targetQuantity)} ${task.unit}</div>
         </div>
         
         <div style="height: 20px;"></div>
@@ -1095,6 +1123,11 @@ function openTrackModal(taskId) {
             document.getElementById('productivityResult').style.display = 'none';
         }
     });
+}
+
+function toggleTaskMenu(taskId) {
+    const menu = document.getElementById('taskMenu_' + taskId);
+    if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 }
 
 function closeTrackModal() {

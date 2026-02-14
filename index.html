@@ -47,10 +47,10 @@
 
             <div class="section">
                 <div class="section-header-with-action">
-                    <h2 class="section-title">RECENT TASKS</h2>
+                    <h2 class="section-title">TODAY'S TASKS</h2>
                     <button class="sort-icon-btn" onclick="showHomeSortMenu()" title="Sort tasks">☰</button>
                 </div>
-                <div id="recentTasksList" class="tasks-list"></div>
+                <div id="recentTasksList" class="tasks-grid"></div>
             </div>
 
             <div class="app-footer">
@@ -172,39 +172,37 @@
                     <h1>Tasks & Performance</h1>
                     <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
                 </div>
-                
-                <div id="totalProductivityDisplay" class="productivity-banner">
+
+                <div class="date-navigator">
+                    <button id="prevDate" class="btn-icon">←</button>
+                    <div style="flex:1; text-align:center;">
+                        <div id="reportDate" class="report-date"></div>
+                    </div>
+                    <button id="calendarBtn" class="btn-icon" title="Pick date">📅</button>
+                    <input type="date" id="reportDatePicker" style="display:none; position:absolute;" onchange="handleDatePick(this.value)">
+                    <button id="nextDate" class="btn-icon">→</button>
+                </div>
+
+                <div id="totalProductivityDisplay" class="productivity-banner" style="margin-top:12px;">
                     <div class="prod-label">TOTAL PRODUCTIVITY</div>
                     <div class="prod-value" id="totalProductivity">—</div>
                 </div>
 
-                <div class="date-navigator">
-                    <button id="prevDate" class="btn-icon">←</button>
-                    <div id="reportDate" class="report-date"></div>
-                    <button id="nextDate" class="btn-icon">→</button>
-                </div>
-
-                <div class="filters-row">
-                    <select id="locationFilter" class="filter-select">
-                        <option value="">All Locations</option>
-                    </select>
+                <div class="filters-row" style="margin-top:12px;">
                     <select id="statusFilter" class="filter-select">
                         <option value="">All Status</option>
                         <option value="completed">Completed</option>
                         <option value="pending">In Progress</option>
                     </select>
+                    <button class="sort-icon-btn" onclick="showReportsSortMenu()" title="Sort">☰</button>
                 </div>
-
-                <button id="productivityByTradeBtn" class="btn-secondary" style="width: 100%; margin-top: 12px;">
-                    📊 Productivity by Trade
-                </button>
             </div>
 
-            <div id="reportsList" class="tasks-list"></div>
+            <div id="reportsList" class="tasks-grid"></div>
 
             <div id="leaderboard" class="leaderboard" style="display:none;">
                 <div class="section-header-with-action">
-                    <h2 class="section-title">🏆 TEAM LEADERBOARD</h2>
+                    <h2 class="section-title">TEAM LEADERBOARD</h2>
                     <button class="sort-icon-btn" onclick="showLeaderboardSortMenu()" title="Sort leaderboard">☰</button>
                 </div>
                 <div id="leaderboardList"></div>
