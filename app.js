@@ -88,26 +88,47 @@ function saveStateToStorage() {
 
 // ========== NAVIGATION ==========
 function setupEventListeners() {
+    // Navigation
     document.querySelectorAll('.nav-item').forEach(btn => {
         btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
     });
     
-    document.getElementById('createTaskForm').addEventListener('submit', handleSaveTask);
-    document.getElementById('shareTaskBtn').addEventListener('click', handleShareTask);
+    // Create Task Form
+    const createForm = document.getElementById('createTaskForm');
+    if (createForm) createForm.addEventListener('submit', handleSaveTask);
+    
+    const shareBtn = document.getElementById('shareTaskBtn');
+    if (shareBtn) shareBtn.addEventListener('click', handleShareTask);
     
     const mainActivityInput = document.getElementById('mainActivity');
-    mainActivityInput.addEventListener('input', handleMainActivitySearch);
-    mainActivityInput.addEventListener('focus', showAllMainActivities);
+    if (mainActivityInput) {
+        mainActivityInput.addEventListener('input', handleMainActivitySearch);
+        mainActivityInput.addEventListener('focus', showAllMainActivities);
+    }
     
-    document.getElementById('activity').addEventListener('change', handleActivityChange);
-    document.getElementById('workerSearch').addEventListener('input', handleWorkerSearch);
-    document.getElementById('hours').addEventListener('input', calculateTarget);
+    const activitySelect = document.getElementById('activity');
+    if (activitySelect) activitySelect.addEventListener('change', handleActivityChange);
     
-    document.getElementById('prevDate').addEventListener('click', () => navigateDate(-1));
-    document.getElementById('nextDate').addEventListener('click', () => navigateDate(1));
-    document.getElementById('statusFilter').addEventListener('change', loadReports);
-    document.getElementById('calendarBtn').addEventListener('click', () => {
+    const workerSearch = document.getElementById('workerSearch');
+    if (workerSearch) workerSearch.addEventListener('input', handleWorkerSearch);
+    
+    const hoursInput = document.getElementById('hours');
+    if (hoursInput) hoursInput.addEventListener('input', calculateTarget);
+    
+    // Reports
+    const prevDate = document.getElementById('prevDate');
+    if (prevDate) prevDate.addEventListener('click', () => navigateDate(-1));
+    
+    const nextDate = document.getElementById('nextDate');
+    if (nextDate) nextDate.addEventListener('click', () => navigateDate(1));
+    
+    const statusFilter = document.getElementById('statusFilter');
+    if (statusFilter) statusFilter.addEventListener('change', loadReports);
+    
+    const calendarBtn = document.getElementById('calendarBtn');
+    if (calendarBtn) calendarBtn.addEventListener('click', () => {
         const picker = document.getElementById('reportDatePicker');
+        if (!picker) return;
         picker.value = state.reportDate;
         picker.style.display = 'block';
         picker.click();
@@ -117,7 +138,26 @@ function setupEventListeners() {
         }, { once: true });
     });
     
-    document.getElementById('workersScreenSearch').addEventListener('input', handleWorkersScreenSearch);
+    // Workers
+    const workersSearch = document.getElementById('workersScreenSearch');
+    if (workersSearch) workersSearch.addEventListener('input', handleWorkersScreenSearch);
+    
+    // Close suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('#mainActivity') && !e.target.closest('#mainActivitySuggestions')) {
+            const s = document.getElementById('mainActivitySuggestions');
+            if (s) s.innerHTML = '';
+        }
+        if (!e.target.closest('#calcMainActivity') && !e.target.closest('#calcMainActivitySuggestions')) {
+            const s = document.getElementById('calcMainActivitySuggestions');
+            if (s) s.innerHTML = '';
+        }
+        // Close modals on backdrop click
+        ['trackModal','workerModal','tradeModal'].forEach(id => {
+            const modal = document.getElementById(id);
+            if (e.target === modal) modal.classList.remove('show');
+        });
+    });
 }
 
 function switchScreen(screenId) {
@@ -461,13 +501,10 @@ function cancelEdit() {
 
 function populateLocations() {
     const locationSelect = document.getElementById('location');
-    const locationFilter = document.getElementById('locationFilter');
-    
-    locationSelect.innerHTML = '<option value="">Select location...</option>' +
-        state.companyData.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
-    
-    locationFilter.innerHTML = '<option value="">All Locations</option>' +
-        state.companyData.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+    if (locationSelect) {
+        locationSelect.innerHTML = '<option value="">Select location...</option>' +
+            state.companyData.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
+    }
 }
 
 function populateTrades() {
