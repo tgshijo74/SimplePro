@@ -9,7 +9,8 @@ let state = {
     selectedActivity: null,
     lastSavedTask: null,
     tasks: [],
-    leaderboardSortBy: 'high', // high or low
+    leaderboardSortBy: 'high',
+    groups: [],
     companyData: {
         projectName: 'Al Barsha Mall Project',
         standardHours: 8,
@@ -19,7 +20,7 @@ let state = {
         locations: ['First Floor', 'Second Floor', 'Security Room', 'External - North Wing', 'Basement'],
         trades: ['Plumbing', 'Ducting', 'HVAC', 'Chilled Water', 'Electrical']
     },
-    workers: [...WORKERS],
+    workers: typeof workersData !== "undefined" ? workersData.map(w => ({...w, id: Number(w.id)})) : [],
     productivityRates: [...DATA],
     editingTaskId: null
 };
@@ -28,6 +29,7 @@ let state = {
 document.addEventListener('DOMContentLoaded', function() {
     console.log('SimplePro MEP initializing...');
     loadStateFromStorage();
+    initGroups();
     initializeApp();
     setupEventListeners();
     updateHomeScreen();
@@ -35,14 +37,13 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function initializeApp() {
-    document.getElementById('currentDate').textContent = formatDateFull(new Date());
-    document.getElementById('taskDate').valueAsDate = new Date();
-    document.getElementById('reportDate').textContent = formatDateShort(new Date(state.reportDate));
-    
+    const el = id => document.getElementById(id);
+    if (el('currentDate')) el('currentDate').textContent = formatDateFull(new Date());
+    if (el('reportDate')) el('reportDate').textContent = formatDateShort(new Date(state.reportDate));
     updateCompanyDataDisplay();
     populateLocations();
     populateTrades();
-    renderAvailableWorkers();
+    // Don't call renderAvailableWorkers() here - old element removed
 }
 
 function updateCompanyDataDisplay() {
@@ -63,9 +64,9 @@ function loadStateFromStorage() {
         const saved = localStorage.getItem('simplePro_state');
         if (saved) {
             const loaded = JSON.parse(saved);
+            // Only restore tasks and company settings - workers/groups always fresh from JS files
             state.tasks = loaded.tasks || [];
             state.companyData = loaded.companyData || state.companyData;
-            state.workers = loaded.workers || state.workers;
             state.productivityRates = loaded.productivityRates || state.productivityRates;
         }
     } catch (e) {
@@ -79,6 +80,7 @@ function saveStateToStorage() {
             tasks: state.tasks,
             companyData: state.companyData,
             workers: state.workers,
+            groups: state.groups,
             productivityRates: state.productivityRates
         }));
     } catch (e) {
@@ -100,20 +102,7 @@ function setupEventListeners() {
     const shareBtn = document.getElementById('shareTaskBtn');
     if (shareBtn) shareBtn.addEventListener('click', handleShareTask);
     
-    const mainActivityInput = document.getElementById('mainActivity');
-    if (mainActivityInput) {
-        mainActivityInput.addEventListener('input', handleMainActivitySearch);
-        mainActivityInput.addEventListener('focus', showAllMainActivities);
-    }
-    
-    const activitySelect = document.getElementById('activity');
-    if (activitySelect) activitySelect.addEventListener('change', handleActivityChange);
-    
-    const workerSearch = document.getElementById('workerSearch');
-    if (workerSearch) workerSearch.addEventListener('input', handleWorkerSearch);
-    
-    const hoursInput = document.getElementById('hours');
-    if (hoursInput) hoursInput.addEventListener('input', calculateTarget);
+    // Old form elements removed - handled via inline onchange/oninput in new form
     
     // Reports
     const prevDate = document.getElementById('prevDate');
@@ -142,11 +131,21 @@ function setupEventListeners() {
     const workersSearch = document.getElementById('workersScreenSearch');
     if (workersSearch) workersSearch.addEventListener('input', handleWorkersScreenSearch);
     
-    // Close suggestions when clicking outside
+    // Close ALL suggestion dropdowns when clicking outside
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('#mainActivity') && !e.target.closest('#mainActivitySuggestions')) {
-            const s = document.getElementById('mainActivitySuggestions');
+        // Close group suggestions
+        if (!e.target.closest('#groupSearch') && !e.target.closest('#groupSuggestions')) {
+            const s = document.getElementById('groupSuggestions');
             if (s) s.innerHTML = '';
+        }
+        // Close worker search results
+        if (!e.target.closest('#workerSearch') && !e.target.closest('#workerSearchResults')) {
+            const s = document.getElementById('workerSearchResults');
+            if (s) s.innerHTML = '';
+        }
+        // Close main activity suggestions (dynamic ones)
+        if (!e.target.closest('[id^="mainActivity_"]') && !e.target.closest('[id^="mainActivitySuggestions_"]')) {
+            document.querySelectorAll('[id^="mainActivitySuggestions_"]').forEach(el => el.innerHTML = '');
         }
         if (!e.target.closest('#calcMainActivity') && !e.target.closest('#calcMainActivitySuggestions')) {
             const s = document.getElementById('calcMainActivitySuggestions');
@@ -170,9 +169,11 @@ function switchScreen(screenId) {
     });
     
     if (screenId === 'homeScreen') updateHomeScreen();
-    else if (screenId === 'createScreen' && !state.editingTaskId) {
-        // Only reset if NOT in edit mode
-        resetCreateForm();
+    else if (screenId === 'createScreen') {
+        if (!state.editingTaskId) {
+            initCreateScreen(); // Fresh form
+        }
+        // If editing, form is already populated by editTask()
     }
     else if (screenId === 'reportsScreen') loadReports();
     else if (screenId === 'workersScreen') loadWorkersScreen();
@@ -393,7 +394,7 @@ function renderTaskCard(task, context = 'home') {
             <div class="task-card-name">${task.taskName}</div>
             <div class="task-card-row">${task.taskIdentifier}</div>
             <div class="task-card-row">${task.trade}</div>
-            <div class="task-card-row bold">${task.teamName}</div>
+            <div class="task-card-row bold">${task.groupName || task.teamName}</div>
             <div class="task-card-row">${skilled} Skilled ${helpers > 0 ? '• ' + helpers + ' Helper' : ''}</div>
             <div class="task-card-row bold">${task.targetQuantity ? formatNumber(task.targetQuantity) + ' ' + task.unit : '—'}</div>
             ${statusHtml}
@@ -410,16 +411,18 @@ function resetCreateForm() {
     
     const todayTasks = state.tasks.filter(t => t.date === state.currentDate);
     const nextNum = todayTasks.length + 1;
-    document.getElementById('taskId').value = `Task-${String(nextNum).padStart(2, '0')}`;
+    (document.getElementById('taskId') || {}).value = `Task-${String(nextNum).padStart(2, '0')}`;
     
     state.selectedWorkers = [];
     state.selectedActivity = null;
     state.editingTaskId = null;
-    document.getElementById('targetQuantity').textContent = '—';
+    const tqEl = document.getElementById('targetQuantity'); if (tqEl) tqEl.textContent = '—';
     updateSelectedWorkersDisplay();
     renderAvailableWorkers();
     
     document.getElementById('shareTaskBtn').disabled = true;
+    const delBtn = document.getElementById('deleteTaskBtn');
+    if (delBtn) delBtn.disabled = true;
     document.getElementById('saveTaskBtn').textContent = 'Save Task';
     document.getElementById('cancelEditBtn').style.display = 'none';
     state.lastSavedTask = null;
@@ -451,17 +454,17 @@ function editTask(taskId) {
     switchScreen('createScreen');
     
     document.getElementById('taskDate').value = task.date;
-    document.getElementById('taskId').value = task.taskIdentifier;
-    document.getElementById('teamName').value = task.teamName;
-    document.getElementById('taskName').value = task.taskName;
-    document.getElementById('location').value = task.location;
+    // taskId moved to new form - skipped
+    // teamName moved to group in new form - skipped
+    // taskName moved to activity in new form - skipped
+    // location moved to dynamic activity form
     document.getElementById('trade').value = task.trade;
-    document.getElementById('mainActivity').value = task.mainActivity;
+    // mainActivity moved to activity in new form - skipped
     
     populateActivities(task.mainActivity);
     setTimeout(() => {
-        document.getElementById('activity').value = task.activity;
-        document.getElementById('activity').classList.remove('placeholder');
+        // activity element moved to dynamic form
+        // activity element moved to dynamic form
     }, 100);
     
     state.selectedWorkers = task.workers.map(w => w.id);
@@ -469,7 +472,7 @@ function editTask(taskId) {
         r.category === task.mainActivity && r.activity === task.activity
     );
     
-    document.getElementById('hours').value = task.hours;
+    // hours moved to duration in new form - skipped
     
     updateSelectedWorkersDisplay();
     renderAvailableWorkers();
@@ -500,17 +503,32 @@ function cancelEdit() {
 }
 
 function populateLocations() {
-    const locationSelect = document.getElementById('location');
-    if (locationSelect) {
-        locationSelect.innerHTML = '<option value="">Select location...</option>' +
-            state.companyData.locations.map(loc => `<option value="${loc}">${loc}</option>`).join('');
-    }
+    // Location dropdowns are now inside dynamic activity blocks
+    // They get populated when activities are rendered
+    // Settings location management still works via manageLocations()
 }
 
 function populateTrades() {
     const tradeSelect = document.getElementById('trade');
-    tradeSelect.innerHTML = '<option value="">Select trade...</option>' +
-        state.companyData.trades.map(t => `<option value="${t}">${t}</option>`).join('');
+    if (!tradeSelect) return;
+    
+    // Use trades found in workers data (auto-populated from Excel)
+    // Combine with company trades, remove duplicates, sort
+    const workerTrades = typeof tradesFromWorkers !== 'undefined' ? tradesFromWorkers : [];
+    const companyTrades = state.companyData.trades || [];
+    
+    // Union of both, remove empty, sort
+    const allTrades = [...new Set([...workerTrades, ...companyTrades])]
+        .filter(t => t && t.trim())
+        .sort();
+    
+    // Update companyData.trades to match
+    if (workerTrades.length > 0) {
+        state.companyData.trades = allTrades;
+    }
+    
+    tradeSelect.innerHTML = '<option value="">Select...</option>' +
+        allTrades.map(t => `<option value="${t}">${t}</option>`).join('');
 }
 
 // ========== MAIN ACTIVITY ==========
@@ -533,7 +551,8 @@ function handleMainActivitySearch(e) {
 
 function renderMainActivitySuggestions(activities) {
     const container = document.getElementById('mainActivitySuggestions');
-    if (activities.length === 0 || !document.getElementById('mainActivity').value) {
+    if (!container) return;
+    if (activities.length === 0 || !(document.getElementById('mainActivity') || {}).value) {
         container.innerHTML = '';
         return;
     }
@@ -546,13 +565,14 @@ function renderMainActivitySuggestions(activities) {
 }
 
 function selectMainActivity(category) {
-    document.getElementById('mainActivity').value = category;
-    document.getElementById('mainActivitySuggestions').innerHTML = '';
+    (document.getElementById('mainActivity') || {}).value = category;
+    const ms = document.getElementById('mainActivitySuggestions'); if (ms) ms.innerHTML = '';
     populateActivities(category);
 }
 
 function populateActivities(category) {
     const activitySelect = document.getElementById('activity');
+    if (!activitySelect) return;
     const activities = state.productivityRates.filter(d => d.category === category && d.activity);
     
     activitySelect.innerHTML = '<option value="">Select activity...</option>' +
@@ -563,7 +583,7 @@ function populateActivities(category) {
 
 function handleActivityChange(e) {
     const activity = e.target.value;
-    const category = document.getElementById('mainActivity').value;
+    const category = (document.getElementById('mainActivity') || {}).value;
     
     if (activity) {
         e.target.classList.remove('placeholder');
@@ -600,6 +620,7 @@ function renderAvailableWorkers(searchQuery = '') {
     const maxHours = state.companyData.standardHours + state.companyData.overtimeHours;
     
     const container = document.getElementById('availableWorkersList');
+    if (!container) return; // Old form element
     if (workers.length === 0) {
         container.innerHTML = '<div class="empty-state"><p>No workers available</p></div>';
         return;
@@ -642,8 +663,9 @@ function removeWorker(workerId) {
 }
 
 function updateSelectedWorkersDisplay() {
+    // This function handles OLD form - new form uses renderWorkerChips()
     const section = document.getElementById('selectedWorkersSection');
-    const container = document.getElementById('selectedWorkersList');
+    if (!section) return; // Old element - new form uses workers chips instead
     
     if (state.selectedWorkers.length === 0) {
         section.style.display = 'none';
@@ -660,7 +682,7 @@ function updateSelectedWorkersDisplay() {
     const skilled = workers.filter(w => w.type === 'skilled').length;
     const helpers = workers.filter(w => w.type === 'helper').length;
     
-    document.getElementById('selectedCount').textContent = `Skilled: ${skilled}, Helper: ${helpers}`;
+    const scEl = document.getElementById('selectedCount'); if (scEl) scEl.textContent = `Skilled: ${skilled}, Helper: ${helpers}`;
     
     container.innerHTML = workers.map(worker => `
         <div class="worker-item" onclick="removeWorker(${worker.id})">
@@ -677,13 +699,13 @@ function updateSelectedWorkersDisplay() {
 // ========== TARGET CALCULATION ==========
 function calculateTarget() {
     if (!state.selectedActivity || state.selectedWorkers.length === 0) {
-        document.getElementById('targetQuantity').textContent = '—';
+        (document.getElementById('targetQuantity') || {}).textContent = '—';
         return;
     }
     
-    const hours = parseFloat(document.getElementById('hours').value) || 0;
+    const hours = parseFloat((document.getElementById('hours') || {}).value) || 0;
     if (hours <= 0) {
-        document.getElementById('targetQuantity').textContent = '—';
+        (document.getElementById('targetQuantity') || {}).textContent = '—';
         return;
     }
     
@@ -694,7 +716,7 @@ function calculateTarget() {
     const rate = state.selectedActivity.rate;
     const target = ((skilled * state.companyData.skilledRate) + (helpers * state.companyData.helperRate)) * hours / rate;
     
-    document.getElementById('targetQuantity').textContent = 
+    (document.getElementById('targetQuantity') || {}).textContent = 
         `${formatNumber(target)} ${state.selectedActivity.unit}`;
 }
 
@@ -702,53 +724,8 @@ function calculateTarget() {
 
 // ========== VALIDATION & SAVE ==========
 function validateForm() {
-    clearAllErrors();
-    const errors = [];
-    
-    if (!document.getElementById('taskId').value.trim()) {
-        showFieldError('taskId', 'Task ID is required');
-        errors.push('taskId');
-    }
-    if (!document.getElementById('teamName').value.trim()) {
-        showFieldError('teamName', 'Team name is required');
-        errors.push('teamName');
-    }
-    if (!document.getElementById('taskName').value.trim()) {
-        showFieldError('taskName', 'Task name is required');
-        errors.push('taskName');
-    }
-    if (!document.getElementById('location').value) {
-        showFieldError('location', 'Please select a location');
-        errors.push('location');
-    }
-    if (!document.getElementById('trade').value) {
-        showFieldError('trade', 'Please select a trade');
-        errors.push('trade');
-    }
-    if (!document.getElementById('mainActivity').value.trim()) {
-        showFieldError('mainActivity', 'Please select a main activity');
-        errors.push('mainActivity');
-    }
-    if (!document.getElementById('activity').value) {
-        showFieldError('activity', 'Please select an activity');
-        errors.push('activity');
-    }
-    if (state.selectedWorkers.length === 0) {
-        document.getElementById('workersError').textContent = '⚠️ Please select at least 1 worker';
-        document.getElementById('workersError').classList.add('show');
-        errors.push('workers');
-    }
-    const hours = parseFloat(document.getElementById('hours').value);
-    if (!hours || hours <= 0) {
-        showFieldError('hours', 'Hours must be greater than 0');
-        errors.push('hours');
-    }
-    
-    if (errors.length > 0) {
-        showToast('⚠️ Please complete all required fields');
-        return false;
-    }
-    return true;
+    // Old validation - replaced by validateNewTaskForm()
+    return validateNewTaskForm();
 }
 
 function showFieldError(fieldId, message) {
@@ -769,98 +746,38 @@ function clearAllErrors() {
     });
 }
 
-function handleSaveTask(e) {
-    e.preventDefault();
-    console.log('=== SAVE TASK CALLED ===');
-    console.log('state.editingTaskId:', state.editingTaskId);
-    
-    if (!validateForm()) return;
-    
-    const workers = state.selectedWorkers.map(id => state.workers.find(w => w.id === id)).filter(w => w);
-    const skilled = workers.filter(w => w.type === 'skilled').length;
-    const helpers = workers.filter(w => w.type === 'helper').length;
-    const hours = parseFloat(document.getElementById('hours').value);
-    const rate = state.selectedActivity.rate;
-    const target = ((skilled * state.companyData.skilledRate) + (helpers * state.companyData.helperRate)) * hours / rate;
-    
-    console.log('Workers:', workers.length, '| Skilled:', skilled, '| Helpers:', helpers);
-    console.log('Target quantity:', target);
-    
-    if (state.editingTaskId) {
-        // UPDATE existing task
-        console.log('Editing task with ID:', state.editingTaskId);
-        const index = state.tasks.findIndex(t => t.id === state.editingTaskId);
-        
-        if (index === -1) {
-            console.error('Task not found for editing!', state.editingTaskId);
-            showToast('⚠️ Error: Task not found');
-            return;
-        }
-        
-        const existingTask = state.tasks[index];
-        console.log('Found task at index:', index);
-        
-        state.tasks[index] = {
-            ...existingTask,
-            date: document.getElementById('taskDate').value,
-            taskIdentifier: document.getElementById('taskId').value.trim(),
-            teamName: document.getElementById('teamName').value.trim(),
-            taskName: document.getElementById('taskName').value.trim(),
-            location: document.getElementById('location').value,
-            trade: document.getElementById('trade').value,
-            mainActivity: document.getElementById('mainActivity').value.trim(),
-            activity: document.getElementById('activity').value,
-            workers: workers,
-            hours: hours,
-            targetQuantity: target,
-            unit: state.selectedActivity.unit,
-            rate: rate
-        };
-        
-        state.lastSavedTask = state.tasks[index];
-        showToast('✓ Task updated!');
-    } else {
-        // CREATE new task
-        console.log('Creating new task');
-        const task = {
-            id: Date.now().toString(),
-            date: document.getElementById('taskDate').value,
-            taskIdentifier: document.getElementById('taskId').value.trim(),
-            teamName: document.getElementById('teamName').value.trim(),
-            taskName: document.getElementById('taskName').value.trim(),
-            location: document.getElementById('location').value,
-            trade: document.getElementById('trade').value,
-            mainActivity: document.getElementById('mainActivity').value.trim(),
-            activity: document.getElementById('activity').value,
-            workers: workers,
-            hours: hours,
-            targetQuantity: target,
-            unit: state.selectedActivity.unit,
-            rate: rate,
-            actualQuantity: null,
-            productivity: null,
-            status: 'pending',
-            createdAt: new Date().toISOString()
-        };
-        
-        state.tasks.push(task);
-        state.lastSavedTask = task;
-        showToast('✓ Task saved!');
+
+// Old handleSaveTask removed - using new multi-activity version
+
+
+function deleteLastSavedTasks() {
+    if (!state.lastSavedTaskIds || state.lastSavedTaskIds.length === 0) {
+        showToast('No recently saved tasks to delete');
+        return;
     }
     
+    const count = state.lastSavedTaskIds.length;
+    const msg = count > 1 
+        ? `Delete these ${count} tasks? This cannot be undone.`
+        : 'Delete this task? This cannot be undone.';
+    
+    if (!confirm(msg)) return;
+    
+    // Remove tasks
+    state.tasks = state.tasks.filter(t => !state.lastSavedTaskIds.includes(t.id));
+    state.lastSavedTaskIds = [];
+    state.lastSavedTask = null;
+    
+    // Disable buttons
+    document.getElementById('shareTaskBtn').disabled = true;
+    const deleteBtn = document.getElementById('deleteTaskBtn');
+    if (deleteBtn) deleteBtn.disabled = true;
+    
     saveStateToStorage();
-    document.getElementById('shareTaskBtn').disabled = false;
+    showToast(`🗑️ ${count} task${count > 1 ? 's' : ''} deleted`);
     
-    // Reset editing state completely
-    state.editingTaskId = null;
-    state.returnToWorkersScreen = false;
-    
-    // Reset form UI
-    document.getElementById('saveTaskBtn').textContent = 'Save Task';
-    document.getElementById('cancelEditBtn').style.display = 'none';
-    
-    // Stay on page so user can share - they press Home tab when ready
-    showToast('✓ Task saved! Share or press Home when ready.');
+    // Reset form after short delay
+    setTimeout(() => initCreateScreen(), 800);
 }
 
 function handleShareTask() {
@@ -868,13 +785,13 @@ function handleShareTask() {
     
     const task = state.lastSavedTask;
     const workersList = task.workers.map((w, i) => 
-        `${i + 1}. ${w.name} (${w.id}) - ${w.occupation}`
+        `${i + 1}. ${w.isLeader ? '⭐ ' : ''}${w.name} (${w.id}) - ${w.occupation}`
     ).join('\n');
     
     const message = `SimplePro - Task Assignment
 
 📋 Task: ${task.taskName}
-👥 Team: ${task.teamName}
+👥 Group: ${task.groupName || task.teamName}
 🔧 Trade: ${task.trade}
 📍 Location: ${task.location}
 📅 Date: ${formatDateFull(new Date(task.date))}
@@ -1790,3 +1707,935 @@ document.addEventListener('click', function(e) {
         if (e.target === modal) modal.classList.remove('show');
     });
 });
+
+// ========== GROUPS DATA ==========
+function initGroups() {
+    // Always reload from groupsData (source of truth from workers-data.js)
+    // This ensures 'trade' field is always fresh from Excel import
+    if (typeof groupsData !== 'undefined' && groupsData.length > 0) {
+        // Merge: keep any custom groups added by user, refresh built-in groups
+        const builtInIds = groupsData.map(g => g.id);
+        const customGroups = (state.groups || []).filter(g => !builtInIds.includes(g.id));
+        state.groups = [...JSON.parse(JSON.stringify(groupsData)), ...customGroups];
+    } else if (!state.groups || state.groups.length === 0) {
+        state.groups = [];
+    }
+}
+
+// ========== TASK ID GENERATOR ==========
+function generateTaskId(date, groupName, seq) {
+    const d = new Date(date);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yy = String(d.getFullYear()).slice(2);
+    const gName = (groupName || 'CUSTOM').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 7);
+    const num = String(seq).padStart(2, '0');
+    return `${dd}${mm}${yy}${gName}${num}`;
+}
+
+// ========== NEW CREATE TASK ==========
+let createState = {
+    selectedWorkers: [],   // [{id, name, occupation, type, isLeader}]
+    activities: [],        // [{taskName, location, mainActivity, activity, duration, rate, unit}]
+    groupId: null,
+    groupName: '',
+    isCustomGroup: false,
+    editingTaskIds: []     // for edit mode
+};
+
+function initCreateScreen() {
+    // Full reset of create state
+    createState = { 
+        selectedWorkers: [], 
+        activities: [], 
+        groupId: null, 
+        groupName: '', 
+        isCustomGroup: false, 
+        editingTaskIds: [] 
+    };
+    
+    // Reset session saved IDs (prevent stale delete)
+    state.lastSavedTaskIds = [];
+    state.lastSavedTask = null;
+    
+    // Reset all form fields
+    document.getElementById('taskDate').valueAsDate = new Date();
+    
+    // Reset trade dropdown to blank
+    const tradeEl = document.getElementById('trade');
+    if (tradeEl) tradeEl.value = '';
+    
+    // Reset group field
+    document.getElementById('groupSearch').value = '';
+    document.getElementById('selectedGroupId').value = '';
+    document.getElementById('selectedGroupName').value = '';
+    document.getElementById('groupSuggestions').innerHTML = '';
+    
+    // Reset worker search
+    document.getElementById('workerSearch').value = '';
+    document.getElementById('workerSearchResults').innerHTML = '';
+    
+    // Reset buttons
+    document.getElementById('saveTaskBtn').textContent = 'Save Tasks';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    document.getElementById('shareTaskBtn').disabled = true;
+    const delBtn = document.getElementById('deleteTaskBtn');
+    if (delBtn) delBtn.disabled = true;
+    
+    // Populate trades from workers data
+    populateTrades();
+    
+    // Render empty workers
+    renderWorkerChips();
+    
+    // Start with ONE clean empty activity
+    createState.activities = [createEmptyActivity()];
+    renderActivities();
+    updateTotalHours();
+}
+
+function createEmptyActivity() {
+    return { taskName: '', location: '', mainActivity: '', activity: '', duration: 8, rate: null, unit: '', targetQty: null };
+}
+
+// ========== TRADE CHANGE ==========
+function handleTradeChange() {
+    const trade = getSelectedTrade();
+    const groupSearch = document.getElementById('groupSearch');
+    const groupSuggestions = document.getElementById('groupSuggestions');
+    
+    // If no trade selected, close the dropdown
+    if (!trade) {
+        if (groupSuggestions) groupSuggestions.innerHTML = '';
+        return;
+    }
+    
+    // Re-run group search with current query
+    const query = groupSearch ? groupSearch.value : '';
+    handleGroupSearch(query);
+    renderWorkerChips();
+}
+
+function getSelectedTrade() {
+    return document.getElementById('trade')?.value || '';
+}
+
+// ========== GROUP SEARCH ==========
+function handleGroupFocus() {
+    handleGroupSearch(document.getElementById('groupSearch').value);
+}
+
+function handleGroupSearch(query) {
+    const trade = getSelectedTrade();
+    const container = document.getElementById('groupSuggestions');
+    if (!container) return;
+    const groups = state.groups || [];
+    const selectedTrade = trade || '';
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+
+    // If no trade selected and no query, hide the dropdown
+    if (!selectedTrade && !query) {
+        container.innerHTML = '';
+        return;
+    }
+
+    // Filter groups by query
+    let matched = groups.filter(g => !query || g.name.toLowerCase().includes(query.toLowerCase()));
+
+    // *** COMPUTE tradeLabel + hoursToday + isFullyBooked for EACH group ***
+    // This MUST happen before filtering/sorting
+    matched = matched.map(g => {
+        const memberIds = g.memberIds || [];
+        // Find members using Number() to fix string/number mismatch from localStorage
+        const members = memberIds.map(id => state.workers.find(w => Number(w.id) === Number(id))).filter(Boolean);
+        
+        // Count trades from members (use worker.trade from Excel column E)
+        const tradeCounts = {};
+        members.forEach(w => {
+            const t = (w.trade || '').trim();
+            if (t) tradeCounts[t] = (tradeCounts[t] || 0) + 1;
+        });
+        
+        // Get dominant trade
+        let tradeLabel = '';
+        if (Object.keys(tradeCounts).length > 0) {
+            tradeLabel = Object.entries(tradeCounts).sort((a,b) => b[1]-a[1])[0][0];
+        } else if (g.trade && g.trade.trim()) {
+            tradeLabel = g.trade;
+        }
+        
+        // Calculate hours today for this group
+        const today = document.getElementById('taskDate')?.value || state.currentDate;
+        const groupTasks = state.tasks.filter(t =>
+            t.date === today &&
+            t.groupName && t.groupName.toUpperCase() === g.name.toUpperCase()
+        );
+        const hoursToday = groupTasks.reduce((sum, t) => sum + (parseFloat(t.hours) || 0), 0);
+        const isFullyBooked = hoursToday >= maxHours;
+
+        return { ...g, tradeLabel, hoursToday, isFullyBooked };
+    });
+
+    // Sort: available + trade match first, available others next, fully booked at bottom
+    matched.sort((a, b) => {
+        if (a.isFullyBooked !== b.isFullyBooked) return a.isFullyBooked ? 1 : -1;
+        const aMatch = selectedTrade && a.tradeLabel === selectedTrade ? -1 : 1;
+        const bMatch = selectedTrade && b.tradeLabel === selectedTrade ? -1 : 1;
+        return aMatch - bMatch;
+    });
+
+    let html = '';
+    
+    // Create new option - always first if query exists
+    const displayName = query || '';
+    html += `<div class="suggestions-list">`;
+    if (displayName) {
+        html += `<div class="group-suggestion-item create-new" onclick="selectCustomGroup('${displayName.replace(/'/g,"\\'")}')">
+            ✨ Create custom group "${displayName}"
+        </div>`;
+    }
+    
+    // Trade-matching groups (using computed tradeLabel)
+    const tradMatched = matched.filter(g => g.tradeLabel === selectedTrade);
+    const others = matched.filter(g => g.tradeLabel !== selectedTrade);
+    
+    if (tradMatched.length > 0 && selectedTrade) {
+        html += `<div class="group-suggestion-divider">Best Match</div>`;
+        tradMatched.forEach(g => {
+            const leader = state.workers.find(w => w.id === g.leaderId);
+            const leaderName = leader ? leader.name.split(' ')[0] : '';
+            const hoursColor = g.isFullyBooked ? '#d63031' : g.hoursToday > 0 ? '#d9730d' : '#2b8a3e';
+            const hoursBg = g.isFullyBooked ? '#ffd4d4' : g.hoursToday > 0 ? '#ffe8cc' : '#d4f8d4';
+            const maxH = (state.companyData.standardHours||8)+(state.companyData.overtimeHours||2);
+            html += `<div class="group-suggestion-item ${g.isFullyBooked ? 'worker-fully-booked' : ''}" 
+                onclick="${g.isFullyBooked ? `showToast('⚠️ ${g.name} already at ${maxH}hrs today')` : `selectGroup('${g.id}')`}">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:600;">👥 ${g.name}</span>
+                    <span style="background:${hoursBg};color:${hoursColor};padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">${g.hoursToday}/${maxH} hrs</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    ${g.tradeLabel || 'General'} · ${g.memberIds.length} workers${leaderName ? ' · ⭐'+leaderName : ''}${g.isFullyBooked ? ' · ⚠️ Fully booked' : ''}
+                </div>
+            </div>`;
+        });
+    }
+    
+    if (others.length > 0) {
+        if (tradMatched.length > 0) html += `<div class="group-suggestion-divider">Other Groups</div>`;
+        others.forEach(g => {
+            const leader = state.workers.find(w => w.id === g.leaderId);
+            const leaderName = leader ? leader.name.split(' ')[0] : '';
+            const hoursColor = g.isFullyBooked ? '#d63031' : g.hoursToday > 0 ? '#d9730d' : '#2b8a3e';
+            const hoursBg = g.isFullyBooked ? '#ffd4d4' : g.hoursToday > 0 ? '#ffe8cc' : '#d4f8d4';
+            const maxH = (state.companyData.standardHours||8)+(state.companyData.overtimeHours||2);
+            html += `<div class="group-suggestion-item ${g.isFullyBooked ? 'worker-fully-booked' : ''}"
+                onclick="${g.isFullyBooked ? `showToast('⚠️ ${g.name} already at ${maxH}hrs today')` : `selectGroup('${g.id}')`}">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:600;">👥 ${g.name}</span>
+                    <span style="background:${hoursBg};color:${hoursColor};padding:2px 8px;border-radius:8px;font-size:12px;font-weight:700;">${g.hoursToday}/${maxH} hrs</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    ${g.tradeLabel || 'General'} · ${g.memberIds.length} workers${leaderName ? ' · ⭐'+leaderName : ''}${g.isFullyBooked ? ' · ⚠️ Fully booked' : ''}
+                </div>
+            </div>`;
+        });
+    }
+    
+    if (!displayName && matched.length === 0) {
+        html += `<div style="padding:12px 16px; color:var(--text-muted); font-size:13px;">No groups found</div>`;
+    }
+    
+    html += `</div>`;
+    container.innerHTML = html;
+}
+
+function selectGroup(groupId) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group) return;
+    
+    createState.groupId = groupId;
+    createState.groupName = group.name;
+    createState.isCustomGroup = false;
+    
+    document.getElementById('groupSearch').value = group.name;
+    document.getElementById('selectedGroupId').value = groupId;
+    document.getElementById('selectedGroupName').value = group.name;
+    document.getElementById('groupSuggestions').innerHTML = '';
+    
+    // Load workers from group sorted by trade
+    const trade = getSelectedTrade();
+    // Use Number() to handle string/number mismatch after localStorage
+    let workers = group.memberIds.map(id => state.workers.find(w => Number(w.id) === Number(id))).filter(Boolean);
+    
+    // Sort: leader first, then trade-matching by worker.trade, then others
+    workers.sort((a, b) => {
+        if (a.isLeader) return -1;
+        if (b.isLeader) return 1;
+        const aMatch = trade && a.trade === trade ? -1 : 1;
+        const bMatch = trade && b.trade === trade ? -1 : 1;
+        return aMatch - bMatch;
+    });
+    
+    createState.selectedWorkers = workers.map(w => ({ ...w }));
+    renderWorkerChips();
+    updateTotalHours();
+    generateAllTaskIds();
+}
+
+function selectCustomGroup(name) {
+    createState.groupId = null;
+    createState.groupName = name + '*';
+    createState.isCustomGroup = true;
+    createState.selectedWorkers = [];
+    
+    document.getElementById('groupSearch').value = name + '*';
+    document.getElementById('selectedGroupId').value = '';
+    document.getElementById('selectedGroupName').value = name + '*';
+    document.getElementById('groupSuggestions').innerHTML = '';
+    
+    renderWorkerChips();
+    generateAllTaskIds();
+    showToast('Custom group - please add workers manually');
+}
+
+// ========== WORKER CHIPS ==========
+function renderWorkerChips() {
+    const container = document.getElementById('selectedWorkersList');
+    if (!container) return;
+    
+    if (createState.selectedWorkers.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted); font-size:13px; padding:4px 0;">No workers selected yet</div>';
+        updateWorkersHoursBadge();
+        return;
+    }
+    
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    
+    container.innerHTML = createState.selectedWorkers.map((w) => {
+        const hoursToday = getWorkerHoursToday(w.id);
+        const isBooked = hoursToday >= maxHours;
+        const isPartial = !isBooked && hoursToday > 0;
+        const chipStyle = isBooked ? 'border-color:#d63031; background:#fff5f5;' : 
+                          isPartial ? 'border-color:#f59f00;' : '';
+        const hoursStyle = isBooked ? 'color:#d63031; font-weight:700;' : 
+                           isPartial ? 'color:#d9730d; font-weight:600;' : 'color:#2b8a3e;';
+        const hoursDisplay = `${hoursToday}/${maxHours}h`;
+        return `
+        <div class="worker-chip ${w.isLeader ? 'leader' : ''}" style="${chipStyle}" title="${w.name} - ${w.occupation}">
+            ${w.isLeader ? '⭐ ' : ''}${w.name.split(' ')[0]}
+            <span style="font-size:11px; ${hoursStyle}">${hoursDisplay}</span>
+            <button class="worker-chip-remove" onclick="removeWorkerFromTask(${w.id})">−</button>
+        </div>`;
+    }).join('');
+    
+    updateWorkersHoursBadge();
+}
+
+function updateWorkersHoursBadge() {
+    const badge = document.getElementById('workersHoursBadge');
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    const totalHours = getTotalHours();
+    const skilled = createState.selectedWorkers.filter(w => w.type === 'skilled').length;
+    const helpers = createState.selectedWorkers.filter(w => w.type === 'helper').length;
+    
+    badge.textContent = `${skilled} Skilled · ${helpers} Helper`;
+    badge.className = 'hours-badge';
+}
+
+function removeWorkerFromTask(workerId) {
+    createState.selectedWorkers = createState.selectedWorkers.filter(w => w.id !== workerId);
+    renderWorkerChips();
+    recalculateAllTargets();
+}
+
+// ========== WORKER SEARCH (Add to task) ==========
+function handleWorkerSearchFocus() {
+    // Show ALL available workers when focused
+    handleWorkerSearch(document.getElementById('workerSearch').value || '__ALL__');
+}
+
+function getWorkerHoursToday(workerId) {
+    const today = document.getElementById('taskDate')?.value || state.currentDate;
+    let totalHours = 0;
+    state.tasks.forEach(t => {
+        if (t.date === today && t.workers && 
+            t.workers.some(w => Number(w.id) === Number(workerId))) {
+            totalHours += (parseFloat(t.hours) || 0);
+        }
+    });
+    return totalHours;
+}
+
+function getWorkerGroupLabel(worker) {
+    // Use worker.group directly from workers-data.js (set from Excel column F)
+    // This is the most reliable - no ID comparison needed
+    if (worker.group && worker.group.trim()) return `Group: ${worker.group.trim()}`;
+    return 'No group';
+}
+
+function handleWorkerSearch(query) {
+    const trade = getSelectedTrade();
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    
+    // Use Number() to avoid string/number mismatch from localStorage
+    const alreadySelected = createState.selectedWorkers.map(w => Number(w.id));
+    let workers = state.workers.filter(w => !alreadySelected.includes(Number(w.id)));
+    
+    const trimmedQuery = (query === '__ALL__') ? '' : query.trim();
+    if (trimmedQuery) {
+        workers = workers.filter(w => 
+            w.name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+            w.occupation.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+            String(w.id).includes(trimmedQuery)
+        );
+    }
+    // If no query - show ALL workers (all 34), just sorted by trade priority
+    
+    // Sort: 
+    // 1. Exact trade match first (green)
+    // 2. MEP Helpers / no trade (flexible - works anywhere)
+    // 3. Other trades
+    // Within each group: available hours ascending (most available first)
+    workers.sort((a, b) => {
+        const aExact = trade && a.trade === trade ? 0 : ((!a.trade || a.trade === '') ? 1 : 2);
+        const bExact = trade && b.trade === trade ? 0 : ((!b.trade || b.trade === '') ? 1 : 2);
+        if (aExact !== bExact) return aExact - bExact;
+        return getWorkerHoursToday(a.id) - getWorkerHoursToday(b.id);
+    });
+    
+    const container = document.getElementById('workerSearchResults');
+    if (!container) return;
+    // Only hide if query is truly empty AND not triggered by focus
+    if (!query) { container.innerHTML = ''; return; }
+    if (workers.length === 0) { 
+        container.innerHTML = '<div class="suggestions-list"><div style="padding:12px 16px; color:var(--text-muted);">No workers available</div></div>';
+        return;
+    }
+    
+    container.innerHTML = `<div class="suggestions-list">` +
+        workers.slice(0, 34).map(w => {
+            const hoursToday = getWorkerHoursToday(w.id);
+            const isFullyBooked = hoursToday >= maxHours;
+            const groupLabel = getWorkerGroupLabel(w);
+            
+            // Hours color
+            const hoursColor = isFullyBooked ? '#d63031' : hoursToday > 0 ? '#d9730d' : '#2b8a3e';
+            const hoursBg = isFullyBooked ? '#ffd4d4' : hoursToday > 0 ? '#ffe8cc' : '#d4f8d4';
+            const hoursText = `${hoursToday}/${maxHours} hrs`;
+            
+            // Warning if fully booked
+            const bookedWarning = isFullyBooked ? ' ⚠️ Fully booked' : '';
+            
+            const tradeMatch = trade && w.trade === trade;
+            const isHelper = w.type === 'helper' || w.occupation.toLowerCase().includes('helper');
+            const badgeText = w.trade ? w.trade : (isHelper ? 'Helper' : w.occupation);
+            const badgeBg   = tradeMatch ? '#e8f5e9' : isHelper ? '#fff3cd' : '#f0f0f0';
+            const badgeColor = tradeMatch ? '#2b8a3e' : isHelper ? '#856404' : '#888';
+            const tradeBadge = `<span style="background:${badgeBg}; color:${badgeColor}; padding:1px 6px; border-radius:4px; font-size:11px; font-weight:600; margin-left:4px;">${badgeText}</span>`;
+
+            // Hours remaining display
+            const hoursLeft = maxHours - hoursToday;
+            const hoursLeftText = isFullyBooked ? '0 hrs left' : `${hoursLeft} hrs left`;
+            
+            return `
+            <div class="group-suggestion-item ${isFullyBooked ? 'worker-fully-booked' : ''}" 
+                 onclick="${isFullyBooked ? `showToast('⛔ ${w.name.split(' ')[0]} is at maximum hours')` : `addWorkerToTask(${w.id})`}">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+                    <div style="flex:1; min-width:0;">
+                        <span style="font-weight:600;">${w.isLeader ? '⭐ ' : ''}${w.name}</span>${tradeBadge}
+                    </div>
+                    <span style="background:${hoursBg}; color:${hoursColor}; padding:2px 8px; border-radius:8px; font-size:12px; font-weight:700; white-space:nowrap;">${hoursText}</span>
+                </div>
+                <div style="color:var(--text-muted); font-size:12px; margin-top:3px;">
+                    ${w.occupation} · ${groupLabel} · <span style="color:${hoursColor}; font-weight:600;">${hoursLeftText}</span>${bookedWarning}
+                </div>
+            </div>`;
+        }).join('') + `</div>`;
+}
+
+function addWorkerToTask(workerId) {
+    const worker = state.workers.find(w => w.id === workerId);
+    if (!worker) return;
+    if (createState.selectedWorkers.find(w => w.id === workerId)) {
+        showToast('Worker already added!'); return;
+    }
+    
+    // Block adding worker if already at max hours
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    const hoursToday = getWorkerHoursToday(workerId);
+    if (hoursToday >= maxHours) {
+        showToast(`⛔ ${worker.name.split(' ')[0]} is at maximum hours (${hoursToday}/${maxHours} hrs). Cannot add.`);
+        return; // BLOCK - cannot add
+    }
+    
+    createState.selectedWorkers.push({ ...worker });
+    document.getElementById('workerSearch').value = '';
+    document.getElementById('workerSearchResults').innerHTML = '';
+    renderWorkerChips();
+    recalculateAllTargets();
+}
+
+// ========== ACTIVITIES ==========
+function renderActivities() {
+    const container = document.getElementById('activitiesContainer');
+    container.innerHTML = createState.activities.map((act, i) => renderActivityBlock(act, i)).join('');
+    
+    // Add + button
+    container.innerHTML += `<button type="button" class="add-activity-btn" onclick="addActivity()">+ Add Another Activity</button>`;
+    
+    // Re-attach event listeners for each activity
+    createState.activities.forEach((act, i) => {
+        const mainInput = document.getElementById(`mainActivity_${i}`);
+        if (mainInput) {
+            mainInput.addEventListener('input', (e) => handleActivityMainSearch(e.target.value, i));
+            mainInput.addEventListener('focus', () => handleActivityMainSearch(document.getElementById(`mainActivity_${i}`).value, i));
+        }
+        const actSelect = document.getElementById(`activity_${i}`);
+        if (actSelect) actSelect.addEventListener('change', (e) => handleActivityChange(e.target.value, i));
+        const durInput = document.getElementById(`duration_${i}`);
+        if (durInput) durInput.addEventListener('input', (e) => handleDurationChange(e.target.value, i));
+        const taskNameInput = document.getElementById(`taskName_${i}`);
+        if (taskNameInput) taskNameInput.addEventListener('input', (e) => { createState.activities[i].taskName = e.target.value; });
+        const locSelect = document.getElementById(`location_${i}`);
+        if (locSelect) locSelect.addEventListener('change', (e) => { createState.activities[i].location = e.target.value; });
+    });
+}
+
+function renderActivityBlock(act, index) {
+    const locations = state.companyData.locations || [];
+    const locOptions = locations.map(l => `<option value="${l}" ${act.location === l ? 'selected' : ''}>${l}</option>`).join('');
+    const canDelete = index > 0;
+    
+    let targetHtml = '';
+    if (act.targetQty !== null && act.targetQty !== undefined) {
+        targetHtml = `
+            <div class="activity-target-display">
+                <span class="activity-target-label">Target Quantity</span>
+                <span class="activity-target-value">${formatNumber(act.targetQty)} ${act.unit}</span>
+            </div>`;
+    }
+    
+    return `
+        <div class="activity-block" id="activityBlock_${index}">
+            <div class="activity-block-header">
+                <span class="activity-block-title">Activity ${index + 1}</span>
+                ${canDelete ? `<button type="button" class="btn-delete-activity" onclick="removeActivity(${index})">🗑️</button>` : ''}
+            </div>
+            
+            <div class="form-group">
+                <label>Task Name</label>
+                <input type="text" id="taskName_${index}" placeholder="e.g., Duct installation lobby" 
+                       value="${act.taskName}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Location</label>
+                <select id="location_${index}" required>
+                    <option value="">Select location...</option>
+                    ${locOptions}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Main Activity</label>
+                <input type="text" id="mainActivity_${index}" placeholder="Type to search..." 
+                       value="${act.mainActivity}" autocomplete="off">
+                <div id="mainActivitySuggestions_${index}" class="suggestions"></div>
+            </div>
+            
+            <div class="form-group">
+                <label>Activity</label>
+                <select id="activity_${index}" class="${act.activity ? '' : 'placeholder'}">
+                    <option value="">Select activity...</option>
+                    ${act.mainActivity ? getActivityOptions(act.mainActivity, act.activity) : ''}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Duration (hrs)</label>
+                <input type="number" id="duration_${index}" value="${act.duration || 8}" 
+                       min="0.5" step="0.5" required>
+            </div>
+            
+            ${targetHtml}
+        </div>
+    `;
+}
+
+function getActivityOptions(category, selected) {
+    const activities = state.productivityRates.filter(r => r.category === category && r.activity);
+    return activities.map(a => `<option value="${a.activity}" ${a.activity === selected ? 'selected' : ''}>${a.activity}</option>`).join('');
+}
+
+function handleActivityMainSearch(query, index) {
+    const container = document.getElementById(`mainActivitySuggestions_${index}`);
+    if (!container) return;
+    
+    const activities = getMainActivities().filter(a => !query || a.toLowerCase().includes(query.toLowerCase()));
+    
+    if (activities.length === 0) { container.innerHTML = ''; return; }
+    
+    container.innerHTML = `<div class="suggestions-list">` +
+        activities.slice(0, 8).map(a => `
+            <div class="suggestion-item" onclick="selectActivityMain('${a.replace(/'/g,"\\'")}', ${index})">${a}</div>
+        `).join('') + `</div>`;
+}
+
+function selectActivityMain(category, index) {
+    createState.activities[index].mainActivity = category;
+    createState.activities[index].activity = '';
+    createState.activities[index].rate = null;
+    createState.activities[index].targetQty = null;
+    
+    document.getElementById(`mainActivity_${index}`).value = category;
+    document.getElementById(`mainActivitySuggestions_${index}`).innerHTML = '';
+    
+    const actSelect = document.getElementById(`activity_${index}`);
+    actSelect.innerHTML = '<option value="">Select activity...</option>' + getActivityOptions(category, '');
+    actSelect.classList.add('placeholder');
+    
+    // Update target display
+    const block = document.getElementById(`activityBlock_${index}`);
+    const existing = block.querySelector('.activity-target-display');
+    if (existing) existing.remove();
+}
+
+function handleActivityChange(value, index) {
+    const category = createState.activities[index].mainActivity;
+    const row = state.productivityRates.find(r => r.category === category && r.activity === value);
+    
+    createState.activities[index].activity = value;
+    createState.activities[index].rate = row ? row.rate : null;
+    createState.activities[index].unit = row ? row.unit : '';
+    
+    document.getElementById(`activity_${index}`).classList.toggle('placeholder', !value);
+    calculateActivityTarget(index);
+}
+
+function handleDurationChange(value, index) {
+    createState.activities[index].duration = parseFloat(value) || 0;
+    calculateActivityTarget(index);
+    updateTotalHours();
+}
+
+function calculateActivityTarget(index) {
+    const act = createState.activities[index];
+    if (!act.rate || !act.duration) { act.targetQty = null; return; }
+    
+    const skilled = createState.selectedWorkers.filter(w => w.type === 'skilled').length;
+    const helpers = createState.selectedWorkers.filter(w => w.type === 'helper').length;
+    
+    if (skilled === 0 && helpers === 0) { act.targetQty = null; return; }
+    
+    const target = ((skilled * state.companyData.skilledRate) + (helpers * state.companyData.helperRate)) * act.duration / act.rate;
+    act.targetQty = target;
+    
+    // Update display inline
+    const block = document.getElementById(`activityBlock_${index}`);
+    if (!block) return;
+    let targetDiv = block.querySelector('.activity-target-display');
+    if (!targetDiv) {
+        targetDiv = document.createElement('div');
+        targetDiv.className = 'activity-target-display';
+        block.appendChild(targetDiv);
+    }
+    targetDiv.innerHTML = `
+        <span class="activity-target-label">Target Quantity</span>
+        <span class="activity-target-value">${formatNumber(target)} ${act.unit}</span>
+    `;
+}
+
+function recalculateAllTargets() {
+    createState.activities.forEach((_, i) => calculateActivityTarget(i));
+}
+
+function addActivity() {
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    if (getTotalHours() >= maxHours) {
+        showToast(`⚠️ Total hours already at maximum (${maxHours}hrs)`);
+        return;
+    }
+    createState.activities.push(createEmptyActivity());
+    renderActivities();
+    updateTotalHours();
+}
+
+function removeActivity(index) {
+    if (createState.activities.length <= 1) return;
+    createState.activities.splice(index, 1);
+    renderActivities();
+    updateTotalHours();
+}
+
+function getTotalHours() {
+    return createState.activities.reduce((sum, a) => sum + (parseFloat(a.duration) || 0), 0);
+}
+
+function updateTotalHours() {
+    const total = getTotalHours();
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    const display = document.getElementById('totalHoursDisplay');
+    if (!display) return;
+    
+    display.textContent = `${total} / ${maxHours} hrs`;
+    display.className = 'total-hours-value';
+    if (total > maxHours) display.classList.add('danger');
+    else if (total >= maxHours * 0.9) display.classList.add('warning');
+    
+    generateAllTaskIds();
+}
+
+function generateAllTaskIds() {
+    const date = document.getElementById('taskDate')?.value || new Date().toISOString().split('T')[0];
+    const groupName = (createState.groupName || 'CUSTOM').replace('*', '');
+    
+    const todayGroupTasks = state.tasks.filter(t => 
+        t.date === date && t.groupName && 
+        t.groupName.replace('*','').toUpperCase() === groupName.toUpperCase()
+    );
+    
+    const startSeq = todayGroupTasks.length + 1;
+    createState.activities.forEach((act, i) => {
+        act.taskId = generateTaskId(date, groupName, startSeq + i);
+    });
+}
+
+// ========== SAVE TASKS ==========
+function handleSaveTask(e) {
+    e.preventDefault();
+    
+    if (!validateNewTaskForm()) return;
+    
+    const date = document.getElementById('taskDate').value;
+    const trade = document.getElementById('trade').value;
+    
+    // Make sure groupName is set - check both createState and the input field
+    if (!createState.groupName) {
+        const groupInput = document.getElementById('groupSearch').value.trim();
+        if (groupInput) {
+            createState.groupName = groupInput;
+        } else {
+            showToast('⚠️ Please select or create a Group');
+            return;
+        }
+    }
+    
+    const groupName = createState.groupName;
+    const workers = createState.selectedWorkers;
+    
+    // FIX DUPLICATION: Remove previously saved tasks from THIS save session first
+    // So pressing Save again replaces, not duplicates
+    if (state.lastSavedTaskIds && state.lastSavedTaskIds.length > 0) {
+        state.tasks = state.tasks.filter(t => !state.lastSavedTaskIds.includes(t.id));
+    }
+    
+    generateAllTaskIds();
+    
+    const sessionId = Date.now().toString();
+    const newTasks = [];
+    
+    createState.activities.forEach((act, i) => {
+        const taskName = document.getElementById(`taskName_${i}`)?.value?.trim() || '';
+        const location = document.getElementById(`location_${i}`)?.value || '';
+        const duration = parseFloat(document.getElementById(`duration_${i}`)?.value) || 8;
+        
+        // Read latest values from DOM into createState
+        createState.activities[i].taskName = taskName;
+        createState.activities[i].location = location;
+        createState.activities[i].duration = duration;
+        
+        const task = {
+            id: sessionId + '_' + i,
+            date: date,
+            taskIdentifier: act.taskId || generateTaskId(date, groupName, i + 1),
+            groupName: groupName,
+            teamName: groupName,
+            taskName: taskName,
+            location: location,
+            trade: trade,
+            mainActivity: act.mainActivity,
+            activity: act.activity,
+            workers: workers.map(w => ({...w})), // copy workers
+            hours: duration,
+            targetQuantity: act.targetQty,
+            unit: act.unit || '',
+            rate: act.rate,
+            actualQuantity: null,
+            productivity: null,
+            status: 'pending',
+            createdAt: new Date().toISOString()
+        };
+        
+        state.tasks.push(task);
+        newTasks.push(task);
+    });
+    
+    state.lastSavedTask = newTasks[0];
+    state.lastSavedTaskIds = newTasks.map(t => t.id);
+    state.editingTaskId = null;
+    
+    // Update currentDate to match saved task date so Home screen shows it
+    state.currentDate = date;
+    
+    saveStateToStorage();
+    
+    document.getElementById('shareTaskBtn').disabled = false;
+    const deleteBtn = document.getElementById('deleteTaskBtn');
+    if (deleteBtn) deleteBtn.disabled = false;
+    document.getElementById('saveTaskBtn').textContent = 'Save Tasks';
+    document.getElementById('cancelEditBtn').style.display = 'none';
+    
+    const count = newTasks.length;
+    showToast(`✓ ${count} task${count > 1 ? 's' : ''} saved! Share or go to Home.`);
+}
+
+function validateNewTaskForm() {
+    let valid = true;
+    
+    if (!document.getElementById('trade').value) {
+        showToast('⚠️ Please select a Trade'); valid = false;
+    } else if (!createState.groupName && !document.getElementById('groupSearch').value) {
+        showToast('⚠️ Please select or create a Group'); valid = false;
+    } else if (createState.selectedWorkers.length === 0) {
+        showToast('⚠️ Please add at least one worker'); valid = false;
+    } else {
+        const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+        if (getTotalHours() > maxHours) {
+            showToast(`⚠️ Total hours exceed maximum (${maxHours}hrs)`); valid = false;
+        }
+        createState.activities.forEach((act, i) => {
+            const taskName = document.getElementById(`taskName_${i}`)?.value?.trim();
+            if (!taskName) { showToast(`⚠️ Activity ${i+1}: Please enter a Task Name`); valid = false; }
+        });
+    }
+    
+    return valid;
+}
+
+// ========== MANAGE GROUPS IN SETTINGS ==========
+function manageGroups() {
+    const groups = state.groups || [];
+    
+    const html = `
+        <div style="margin-bottom:16px;">
+            ${groups.map(g => {
+                const leader = state.workers.find(w => w.id === g.leaderId);
+                return `
+                    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--border);">
+                        <div>
+                            <div style="font-weight:700;">👥 ${g.name}</div>
+                            <div style="font-size:12px; color:var(--text-muted);">
+                                ${g.memberIds.length} workers${leader ? ' · ⭐ ' + leader.name.split(' ')[0] : ''}
+                            </div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn-secondary" onclick="editGroupInSettings('${g.id}')" style="padding:6px 12px; font-size:13px;">Edit</button>
+                            <button class="btn-secondary" onclick="deleteGroup('${g.id}')" style="padding:6px 12px; font-size:13px; color:#d63031;">Delete</button>
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+        <button class="btn-primary" onclick="createNewGroupInSettings()" style="width:100%;">+ Create New Group</button>
+    `;
+    
+    showModal('Manage Groups', html);
+}
+
+function editGroupInSettings(groupId) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group) return;
+    
+    const members = group.memberIds.map(id => state.workers.find(w => w.id === id)).filter(Boolean);
+    
+    const html = `
+        <div style="margin-bottom:12px;">
+            <label style="font-size:13px; font-weight:600;">Group Name</label>
+            <input type="text" id="editGroupName" value="${group.name}" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; margin-top:6px; box-sizing:border-box;">
+        </div>
+        <div style="font-size:13px; font-weight:700; color:var(--text-muted); margin-bottom:8px;">MEMBERS</div>
+        <div id="editGroupMembers">
+            ${members.map(w => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border);">
+                    <span>${w.isLeader ? '⭐ ' : ''}${w.name} <span style="color:var(--text-muted); font-size:12px;">(${w.occupation})</span></span>
+                    <button onclick="removeFromGroup('${groupId}', ${w.id})" style="background:none;border:none;color:#d63031;cursor:pointer;font-size:18px;font-weight:700;">−</button>
+                </div>
+            `).join('')}
+        </div>
+        <input type="text" id="addToGroupSearch" placeholder="Search to add worker..." 
+               style="width:100%; padding:10px; border:1px dashed var(--border); border-radius:8px; margin-top:12px; box-sizing:border-box;"
+               oninput="searchWorkerForGroup('${groupId}', this.value)">
+        <div id="addToGroupResults"></div>
+        <button class="btn-primary" onclick="saveGroupEdits('${groupId}')" style="width:100%; margin-top:16px;">Save Group</button>
+    `;
+    
+    showModal(`Edit Group: ${group.name}`, html);
+}
+
+function removeFromGroup(groupId, workerId) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group) return;
+    group.memberIds = group.memberIds.filter(id => id !== workerId);
+    saveStateToStorage();
+    editGroupInSettings(groupId);
+}
+
+function searchWorkerForGroup(groupId, query) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group || !query) { document.getElementById('addToGroupResults').innerHTML = ''; return; }
+    
+    const workers = state.workers.filter(w => 
+        !group.memberIds.includes(w.id) &&
+        (w.name.toLowerCase().includes(query.toLowerCase()) || w.occupation.toLowerCase().includes(query.toLowerCase()))
+    );
+    
+    document.getElementById('addToGroupResults').innerHTML = `<div class="suggestions-list">` +
+        workers.slice(0, 5).map(w => `
+            <div class="group-suggestion-item" onclick="addToGroup('${groupId}', ${w.id})">
+                ${w.name} <span style="color:var(--text-muted);font-size:12px;">${w.occupation}</span>
+            </div>
+        `).join('') + `</div>`;
+}
+
+function addToGroup(groupId, workerId) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group) return;
+    if (!group.memberIds.includes(workerId)) group.memberIds.push(workerId);
+    saveStateToStorage();
+    editGroupInSettings(groupId);
+}
+
+function saveGroupEdits(groupId) {
+    const group = (state.groups || []).find(g => g.id === groupId);
+    if (!group) return;
+    const newName = document.getElementById('editGroupName')?.value?.trim();
+    if (newName) group.name = newName;
+    saveStateToStorage();
+    closeGenericModal();
+    showToast('✓ Group saved!');
+}
+
+function deleteGroup(groupId) {
+    if (!confirm('Delete this group? Workers will not be deleted.')) return;
+    state.groups = (state.groups || []).filter(g => g.id !== groupId);
+    saveStateToStorage();
+    closeGenericModal();
+    showToast('Group deleted');
+}
+
+function createNewGroupInSettings() {
+    const name = prompt('Group name:');
+    if (!name) return;
+    const newGroup = {
+        id: name.toUpperCase().replace(/\s/g, ''),
+        name: name.toUpperCase(),
+        leaderId: null,
+        memberIds: [],
+        tradeTag: 'General'
+    };
+    if (!state.groups) state.groups = [];
+    state.groups.push(newGroup);
+    saveStateToStorage();
+    editGroupInSettings(newGroup.id);
+}
+

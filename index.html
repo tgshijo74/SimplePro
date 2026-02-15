@@ -61,109 +61,78 @@
         <!-- Create Task Screen -->
         <div id="createScreen" class="screen">
             <div class="header">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <h1>Create New Task</h1>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h1 id="createScreenTitle">Create Tasks</h1>
                     <button class="settings-icon-btn" onclick="openSettings()" title="Settings">⚙️</button>
                 </div>
             </div>
 
-            <form id="createTaskForm" class="form">
-                <div class="form-group">
-                    <label for="taskDate">Date</label>
-                    <input type="date" id="taskDate" required>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="taskId">Task ID</label>
-                    <input type="text" id="taskId" placeholder="e.g., Task-01" required>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="teamName">Team Name</label>
-                    <input type="text" id="teamName" placeholder="e.g., Team Shijo, Team-01" required>
-                    <div class="hint-text">Give your team a name for recognition</div>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="taskName">Task Name</label>
-                    <input type="text" id="taskName" placeholder="e.g., Duct installation main lobby" required>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="location">Location</label>
-                    <select id="location" required>
-                        <option value="">Select location...</option>
-                    </select>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="trade">Trade</label>
-                    <select id="trade" required>
-                        <option value="">Select trade...</option>
-                    </select>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="section-header">ACTIVITY</div>
-
-                <div class="form-group">
-                    <label for="mainActivity">Main Activity</label>
-                    <input type="text" id="mainActivity" placeholder="Type to search..." autocomplete="off" required>
-                    <div id="mainActivitySuggestions" class="suggestions"></div>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="form-group">
-                    <label for="activity">Activity</label>
-                    <select id="activity" class="placeholder" required>
-                        <option value="">Select activity...</option>
-                    </select>
-                    <div class="error-message"></div>
-                </div>
-
-                <div class="section-header">WORKERS</div>
-
-                <div class="form-group">
-                    <input type="text" id="workerSearch" placeholder="Search workers..." autocomplete="off">
-                </div>
-
-                <div id="selectedWorkersSection" class="selected-workers-section" style="display:none;">
-                    <div class="section-subheader">
-                        <span>SELECTED</span>
-                        <span id="selectedCount" class="worker-count">Skilled: 0, Helper: 0</span>
+            <form id="createTaskForm">
+                <!-- ROW 1: Date + Trade side by side -->
+                <div class="form-row-2">
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" id="taskDate" required>
+                        <div class="error-message"></div>
                     </div>
-                    <div id="selectedWorkersList" class="workers-list-compact"></div>
+                    <div class="form-group">
+                        <label>Trade</label>
+                        <select id="trade" required onchange="handleTradeChange()">
+                            <option value="">Select...</option>
+                        </select>
+                        <div class="error-message"></div>
+                    </div>
                 </div>
 
-                <div class="section-subheader" style="margin-top: 12px;">
-                    <span>AVAILABLE WORKERS</span>
-                </div>
-                <div id="availableWorkersList" class="workers-list"></div>
-                <div class="error-message" id="workersError"></div>
-
+                <!-- GROUP -->
                 <div class="form-group">
-                    <label for="hours">Hours</label>
-                    <input type="number" id="hours" placeholder="e.g., 8" min="0.5" step="0.5" required>
-                    <div class="error-message"></div>
+                    <label>Group</label>
+                    <input type="text" id="groupSearch" placeholder="Type to search or create group" 
+                           autocomplete="off" onInput="handleGroupSearch(this.value)" 
+                           onfocus="handleGroupFocus()">
+                    <input type="hidden" id="selectedGroupId">
+                    <input type="hidden" id="selectedGroupName">
+                    <div id="groupSuggestions" class="suggestions"></div>
+                    <div class="error-message" id="groupError"></div>
                 </div>
 
-                <div class="target-display">
-                    <div class="target-label">TARGET QUANTITY</div>
-                    <div class="target-value" id="targetQuantity">—</div>
+                <!-- WORKERS -->
+                <div id="workersSection" class="workers-section">
+                    <div class="section-subheader">
+                        <span>WORKERS</span>
+                        <span id="workersHoursBadge" class="hours-badge"></span>
+                    </div>
+                    <div id="selectedWorkersList" class="workers-chips"></div>
+                    <div class="worker-add-row">
+                        <input type="text" id="workerSearch" placeholder="+ Add worker..." 
+                               autocomplete="off" oninput="handleWorkerSearch(this.value)"
+                               onfocus="handleWorkerSearchFocus()">
+                        <div id="workerSearchResults" class="suggestions"></div>
+                    </div>
+                    <div class="error-message" id="workersError"></div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" id="cancelEditBtn" class="btn-secondary" onclick="cancelEdit()" style="display:none;">Cancel</button>
-                    <button type="submit" id="saveTaskBtn" class="btn-primary">Save Task</button>
-                    <button type="button" id="shareTaskBtn" class="btn-primary" disabled>Share Task</button>
+                <!-- ACTIVITIES -->
+                <div class="section-header">ACTIVITIES</div>
+                <div id="activitiesContainer"></div>
+
+                <!-- TOTAL HOURS -->
+                <div id="totalHoursBar" class="total-hours-bar">
+                    <span>Total Hours:</span>
+                    <span id="totalHoursDisplay" class="total-hours-value">0 / 10</span>
+                </div>
+
+                <!-- ACTIONS -->
+                <div class="form-actions" style="margin-top:20px;">
+                    <button type="button" id="cancelEditBtn" class="btn-secondary" 
+                            onclick="cancelEdit()" style="display:none;">Cancel</button>
+                    <button type="submit" id="saveTaskBtn" class="btn-primary">Save Tasks</button>
+                    <button type="button" id="shareTaskBtn" class="btn-primary" disabled>Share</button>
+                    <button type="button" id="deleteTaskBtn" class="btn-danger" disabled onclick="deleteLastSavedTasks()">🗑️</button>
                 </div>
             </form>
         </div>
+
 
         <!-- Reports Screen -->
         <div id="reportsScreen" class="screen">
@@ -351,6 +320,10 @@
 
             <div class="settings-section">
                 <h3>👷 WORKERS</h3>
+                <div class="setting-item" onclick="manageGroups()">
+                    <div>👥 Manage Groups</div>
+                    <div class="setting-arrow">›</div>
+                </div>
                 <div class="setting-item" onclick="manageWorkers()">
                     <div>Manage Workers</div>
                     <div class="setting-arrow">›</div>
