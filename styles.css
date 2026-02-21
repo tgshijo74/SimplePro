@@ -366,6 +366,13 @@ body {
     flex-direction: column;
 }
 
+
+.form-group input[type="date"],
+.form-group select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
 .form-group label {
     font-size: 13px;
     font-weight: 600;
@@ -1051,7 +1058,12 @@ body {
 .form-row-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 16px;
+    width: 100%;
+}
+
+.form-row-2 .form-group {
+    min-width: 0; /* Prevent overflow */
 }
 
 .workers-section {
