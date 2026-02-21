@@ -1279,8 +1279,8 @@ body {
     cursor: not-allowed;
 }
 
-/* Mobile: Stack date and trade vertically */
-@media (max-width: 768px) {
+/* Mobile: Stack date and trade vertically ONLY on small phones */
+@media (max-width: 480px) {
     .form-row-2 {
         grid-template-columns: 1fr !important;
         gap: 12px;
