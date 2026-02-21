@@ -1278,3 +1278,32 @@ body {
     opacity: 0.3;
     cursor: not-allowed;
 }
+
+/* Mobile: Stack date and trade vertically */
+@media (max-width: 768px) {
+    .form-row-2 {
+        grid-template-columns: 1fr !important;
+        gap: 12px;
+    }
+}
+
+
+.date-trade-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.date-trade-row > div {
+    flex: 1;
+}
+
+/* Stack date and trade vertically on mobile */
+@media (max-width: 600px) {
+    .date-trade-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+    .date-trade-row > div {
+        width: 100%;
+    }
+}

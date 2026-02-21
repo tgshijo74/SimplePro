@@ -119,13 +119,48 @@ function setupEventListeners() {
         const picker = document.getElementById('reportDatePicker');
         if (!picker) return;
         picker.value = state.reportDate;
+        
+        // Direct open: set visible, focus, then trigger
+        picker.style.position = 'fixed';
+        picker.style.top = '50%';
+        picker.style.left = '50%';
+        picker.style.transform = 'translate(-50%, -50%)';
+        picker.style.opacity = '0';
+        picker.style.pointerEvents = 'none';
         picker.style.display = 'block';
-        picker.click();
-        picker.addEventListener('change', function() { 
-            handleDatePick(this.value); 
-            this.style.display = 'none'; 
+        
+        // Focus and open
+        picker.focus();
+        
+        // Modern browsers - showPicker()
+        if (picker.showPicker) {
+            try {
+                picker.showPicker();
+            } catch(e) {
+                // Fallback for iOS/Safari - click
+                picker.click();
+            }
+        } else {
+            // Older browsers - click
+            picker.click();
+        }
+        
+        // Auto-hide when user closes (on blur)
+        picker.addEventListener('blur', function hideOnce() {
+            setTimeout(() => {
+                picker.style.display = 'none';
+                picker.removeEventListener('blur', hideOnce);
+            }, 200);
         }, { once: true });
     });
+    
+    // Handle date change
+    const reportDatePicker = document.getElementById('reportDatePicker');
+    if (reportDatePicker) {
+        reportDatePicker.addEventListener('change', function() {
+            handleDatePick(this.value);
+        });
+    }
     
     // Workers
     const workersSearch = document.getElementById('workersScreenSearch');
@@ -1170,14 +1205,12 @@ function renderWorkersDirectory(searchQuery = '') {
         let totalHours = 0;
         todayTasks.forEach(t => totalHours += t.hours);
         
-        const completedTasks = state.tasks.filter(t => 
-            t.status === 'completed' &&
-            t.workers.some(tw => tw.id === w.id)
-        );
+        // Calculate TODAY's productivity only (not historical average)
+        const completedToday = todayTasks.filter(t => t.status === 'completed');
         
         let avgProductivity = 0;
-        if (completedTasks.length > 0) {
-            avgProductivity = completedTasks.reduce((sum, t) => sum + t.productivity, 0) / completedTasks.length;
+        if (completedToday.length > 0) {
+            avgProductivity = completedToday.reduce((sum, t) => sum + (t.productivity || 0), 0) / completedToday.length;
         }
         
         // Determine trade (most common trade from their tasks)
@@ -1235,6 +1268,22 @@ function renderWorkersDirectory(searchQuery = '') {
         const hoursColor = (worker.totalHours < maxHours || worker.totalHours > maxHours) ? '#d63031' : 'inherit';
         const hoursBold = (worker.totalHours < maxHours || worker.totalHours > maxHours) ? '700' : '500';
         
+        // Calculate HISTORICAL productivity (all past completed tasks)
+        const allCompletedTasks = state.tasks.filter(t => 
+            t.status === 'completed' && 
+            t.workers.some(tw => Number(tw.id) === Number(worker.id))
+        );
+        let historicalProductivity = 0;
+        if (allCompletedTasks.length > 0) {
+            historicalProductivity = allCompletedTasks.reduce((sum, t) => sum + (t.productivity || 0), 0) / allCompletedTasks.length;
+        }
+        
+        // Today status
+        let todayStatus = 'No task';
+        if (worker.todayTasks > 0) {
+            todayStatus = worker.avgProductivity > 0 ? `${Math.round(worker.avgProductivity)}%` : 'In progress';
+        }
+        
         return `
             <div class="worker-card" onclick="showWorkerDashboard(${worker.id})">
                 <div class="worker-card-header">
@@ -1244,11 +1293,14 @@ function renderWorkersDirectory(searchQuery = '') {
                 <div class="worker-card-occupation">${worker.occupation} • ${worker.type} • ${worker.trade}</div>
                 <div class="worker-card-stats">
                     Today: ${worker.todayTasks} tasks • <span style="color: ${hoursColor}; font-weight: ${hoursBold};">${worker.totalHours}/${maxHours} hrs</span>
-                    ${worker.avgProductivity > 0 ? 
-                        `<span style="background: ${productivityBg}; color: ${productivityColor}; padding: 4px 8px; border-radius: 6px; margin-left: 8px; font-weight: 700;">
-                            ${Math.round(worker.avgProductivity)}%
-                        </span>` : ''
-                    }
+                </div>
+                <div class="worker-card-productivity">
+                    <div style="font-weight:600; font-size:11px; color:var(--text-muted); margin-top:8px; margin-bottom:4px;">PRODUCTIVITY</div>
+                    <div style="font-size:13px;">
+                        <span style="color:#666;">Today:</span> <strong>${todayStatus}</strong>
+                        <span style="margin:0 8px; color:#ddd;">|</span>
+                        <span style="color:#666;">Historical:</span> <strong style="color:${historicalProductivity >= 100 ? '#2b8a3e' : historicalProductivity >= 90 ? '#d9730d' : '#666'};">${historicalProductivity > 0 ? Math.round(historicalProductivity) + '%' : 'N/A'}</strong>
+                    </div>
                 </div>
             </div>
         `;
