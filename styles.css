@@ -1279,13 +1279,15 @@ body {
     cursor: not-allowed;
 }
 
-/* Mobile: Stack date and trade vertically ONLY on small phones */
+/* Mobile: Keep date and trade side-by-side (as requested by user)
 @media (max-width: 480px) {
     .form-row-2 {
         grid-template-columns: 1fr !important;
         gap: 12px;
     }
 }
+*/
+/* Stacking disabled - side-by-side layout maintained on all devices */
 
 
 .date-trade-row {
