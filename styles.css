@@ -366,13 +366,6 @@ body {
     flex-direction: column;
 }
 
-
-.form-group input[type="date"],
-.form-group select {
-    width: 100%;
-    box-sizing: border-box;
-}
-
 .form-group label {
     font-size: 13px;
     font-weight: 600;
@@ -1056,31 +1049,9 @@ body {
 
 /* ===== NEW CREATE TASK STYLES ===== */
 .form-row-2 {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 12px;
-    width: 100%;
-}
-
-.form-row-2 .form-group {
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: 50%;
-}
-
-/* Force all inputs in row to respect container */
-.form-row-2 .form-group input,
-.form-row-2 .form-group select {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-}
-
-/* Specific override for date inputs which have intrinsic sizing */
-.form-row-2 input[type="date"] {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
 }
 
 .workers-section {
@@ -1306,35 +1277,4 @@ body {
 .btn-danger:disabled {
     opacity: 0.3;
     cursor: not-allowed;
-}
-
-/* Mobile: Keep date and trade side-by-side (as requested by user)
-@media (max-width: 480px) {
-    .form-row-2 {
-        grid-template-columns: 1fr !important;
-        gap: 12px;
-    }
-}
-*/
-/* Stacking disabled - side-by-side layout maintained on all devices */
-
-
-.date-trade-row {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 20px;
-}
-.date-trade-row > div {
-    flex: 1;
-}
-
-/* Stack date and trade vertically on mobile */
-@media (max-width: 600px) {
-    .date-trade-row {
-        flex-direction: column;
-        gap: 12px;
-    }
-    .date-trade-row > div {
-        width: 100%;
-    }
 }
