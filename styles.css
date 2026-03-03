@@ -1056,25 +1056,31 @@ body {
 
 /* ===== NEW CREATE TASK STYLES ===== */
 .form-row-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
     gap: 12px;
     width: 100%;
-    align-items: start;
 }
 
 .form-row-2 .form-group {
+    flex: 1 1 0;
     min-width: 0;
-    max-width: 100%;
-    flex: 1;
+    max-width: 50%;
 }
 
 /* Force all inputs in row to respect container */
-.form-row-2 input,
-.form-row-2 select {
+.form-row-2 .form-group input,
+.form-row-2 .form-group select {
     width: 100% !important;
+    min-width: 0 !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
+}
+
+/* Specific override for date inputs which have intrinsic sizing */
+.form-row-2 input[type="date"] {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
 }
 
 .workers-section {
