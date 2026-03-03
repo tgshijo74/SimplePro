@@ -1064,6 +1064,28 @@ body {
     flex: 1;
 }
 
+/* Make date input match select dropdown exactly */
+input[type="date"],
+select {
+    height: 48px;
+    padding: 12px 16px;
+    box-sizing: border-box;
+}
+
+input[type="date"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+}
+
+/* Prevent date input from expanding */
+input[type="date"]::-webkit-inner-spin-button,
+input[type="date"]::-webkit-calendar-picker-indicator {
+    margin-left: 0;
+    opacity: 0.5;
+}
+
+
 .workers-section {
     background: var(--input-bg);
     border: 1px solid var(--border);
