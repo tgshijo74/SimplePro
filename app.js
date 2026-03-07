@@ -1847,7 +1847,29 @@ function initCreateScreen() {
 }
 
 function createEmptyActivity() {
-    return { taskName: '', location: '', mainActivity: '', activity: '', duration: 8, rate: null, unit: '', targetQty: null };
+    // Calculate smart default duration based on least available worker
+    const maxHours = (state.companyData.standardHours || 8) + (state.companyData.overtimeHours || 2);
+    let defaultDuration = 8; // fallback
+    
+    if (createState.selectedWorkers.length > 0) {
+        const today = document.getElementById('taskDate')?.value || state.currentDate;
+        let minAvailable = maxHours;
+        
+        createState.selectedWorkers.forEach(w => {
+            const used = getWorkerHoursToday(w.id);
+            const available = maxHours - used;
+            if (available < minAvailable) minAvailable = available;
+        });
+        
+        // Also subtract hours already allocated in current activities
+        const currentTotal = getTotalHours();
+        minAvailable = Math.max(0, minAvailable - currentTotal);
+        
+        // Set default to available hours (but at least 0.5, max 8)
+        defaultDuration = Math.min(8, Math.max(0.5, minAvailable));
+    }
+    
+    return { taskName: '', location: '', mainActivity: '', activity: '', duration: defaultDuration, rate: null, unit: '', targetQty: null };
 }
 
 // ========== TRADE CHANGE ==========
